@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 
 
+FIT_COLOR = "red"
+
+
 @dataclass(frozen=True)
 class Level:
     name: str
@@ -30,3 +33,10 @@ class PlotSpec:
     yscale: str = "linear"
     notes: str = ""
     metadata: dict = field(default_factory=dict)
+
+    # Generic display overrides for adapters that need shared scales or
+    # categorical labels.
+    xlim: tuple[float, float] | None = None
+    ylim: tuple[float, float] | None = None
+    xticks: list[tuple[float, str]] = field(default_factory=list)
+    yticks: list[tuple[float, str]] = field(default_factory=list)

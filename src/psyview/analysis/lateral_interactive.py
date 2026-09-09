@@ -207,8 +207,7 @@ class LateralInteractiveAnalysis:
         from ..plotting.lateral_plots import (
             subject_isf_plot,
             lateral_profile_plot,
-            position_comparison_plot,
-            lateral_threshold_box_plot,
+            lateral_grouped_threshold_box_plot,
             lateral_staircase_plot,
         )
 
@@ -253,32 +252,9 @@ class LateralInteractiveAnalysis:
             spec.metadata['Interactive ISF'] = 'not recomputed'
             return spec
 
-        if level == 2:
-            position = filters['probe_position_deg']
-            match = profile.loc[
-                np.isclose(
-                    profile.probe_position_deg,
-                    position,
-                    rtol=0,
-                    atol=1e-12,
-                )
-            ]
-            if match.empty:
-                raise DatasetError(
-                    f'Interactive N={n} profile has no complete '
-                    f'Base/Flanker point at {position:g}°.'
-                )
-            spec = position_comparison_plot(
-                match.iloc[0],
-                filters,
-                notes_prefix=f'{label}. ',
-            )
-            spec.title = label + ' | ' + spec.title
-            spec.metadata['Analysis'] = label
-            return spec
-
         stairs = self.adapter.select(
-            'stairs', filters
+            'stairs',
+            filters,
         ).copy(deep=True)
 
         archived_thresholds = {}
@@ -296,12 +272,41 @@ class LateralInteractiveAnalysis:
                 else np.nan
             )
 
-        if level == 3:
-            spec = lateral_threshold_box_plot(
+        if level in (2, 3):
+            trials = self.adapter.select(
+                'trials',
+                filters,
+            )
+
+            extra_metadata = {}
+            if level == 2:
+                position = filters['probe_position_deg']
+                match = profile.loc[
+                    np.isclose(
+                        profile.probe_position_deg,
+                        position,
+                        rtol=0,
+                        atol=1e-12,
+                    )
+                ]
+                if not match.empty:
+                    row = match.iloc[0]
+                    extra_metadata = {
+                        'Distance from flanker edge (deg)':
+                            row.distance_from_flanker_edge_deg,
+                        'ln(S_flanker/S_base)':
+                            row.log_sensitivity_ratio,
+                        'Pairwise spread':
+                            row.spread,
+                    }
+
+            spec = lateral_grouped_threshold_box_plot(
                 stairs,
+                trials,
                 filters,
                 threshold_column='threshold_last_five',
                 notes_prefix=f'{label}. ',
+                extra_metadata=extra_metadata,
             )
             spec.title = label + ' | ' + spec.title
             spec.metadata['Analysis'] = label

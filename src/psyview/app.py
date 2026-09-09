@@ -25,7 +25,7 @@ class PsyView(App):
     CSS = '''
     Screen { background: #0b111b; color: #dae5f2; }
     #heading { height: 4; padding: 0 1; color: #72d9e6; }
-    Hierarchy { height: auto; max-height: 45%; }
+    Hierarchy { height: auto; max-height: 26; overflow-y: hidden; }
     .choice-row { height: 5; border-top: solid #33465c; padding: 0 1; }
     .choice { width: auto; min-width: 7; height: 3; padding: 0 1; margin-right: 1; border: blank; color: #8092a9; }
     .selected { background: #203348; color: #dae5f2; }
@@ -79,6 +79,7 @@ class PsyView(App):
     }
 
     Screen.compact #heading { height: 2; }
+    Screen.compact Hierarchy { max-height: 11; }
     Screen.compact .choice-row { height: 2; }
     Screen.compact .choice { height: 1; border: none; }
     Screen.compact #plotbox { width: 100%; height: 19; }

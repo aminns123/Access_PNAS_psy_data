@@ -1,93 +1,113 @@
-PsyView patch: final Staircase row + red fits + N-sensitive threshold box plot
-=============================================================================
+PsyView patch: hierarchy navigation + shared-scale grouped box plots
+===================================================================
 
 REPLACE:
+    src/psyview/models.py
+    src/psyview/app.py
     src/psyview/ui/hierarchy.py
+    src/psyview/plotting/axes.py
+    src/psyview/plotting/terminal.py
+    src/psyview/plotting/matplotlib_plots.py
+    src/psyview/plotting/lateral_plots.py
     src/psyview/data/lateral_sensitivity.py
     src/psyview/analysis/lateral_interactive.py
-    src/psyview/plotting/lateral_plots.py
-    src/psyview/plotting/pnas_plots.py
+    src/psyview/ui/help_screen.py
 
-OPTIONAL TEST:
-    tests/test_lateral_threshold_boxplot.py
+NEW:
+    src/psyview/plotting/boxplots.py
 
-1) FINAL STAIRCASE SELECTOR ROW
--------------------------------
-Hierarchy now uses a vertical scroll container and explicitly scrolls the
-active row into view. At the final lateral level you should see the boxed
-STAIRCASE row and the selected S1/S2/S3/S4-style item, not merely have the
-plot change invisibly while pressing left/right.
+OPTIONAL:
+    tests/test_generic_grouped_boxplot.py
 
-2) FIT CURVES ARE RED
----------------------
-Diagnostic lateral Eq. B.25 fits are now red.
-The CSF current-helper fitted/interpolated curve is also red so "fit/curve"
-has a consistent visual convention.
+1. HIERARCHY / UP-ARROW FIX
+---------------------------
+The previous VerticalScroll hierarchy could capture arrow keys when the fifth
+STAIRCASE row appeared.
 
-3) EXPERIMENT LEVEL IS NOW A THRESHOLD BOX PLOT
-------------------------------------------------
-Lateral hierarchy remains:
+Hierarchy is now a normal Vertical container again. There is no extra vertical
+scrollbar. The app gives it enough room for five boxed rows.
 
-    Subject
-      -> Luminance
-        -> Position
-          -> Experiment
-            -> Staircase
+Expected:
+    at Staircase level, the boxed selector remains visible;
+    Up returns to Experiment normally.
 
-At Experiment level, PsyView no longer overlays all staircase trial
-trajectories. Instead it shows a descriptive box plot of the INCLUDED
-per-staircase thresholds for that selected Base/Flanker experiment:
+2. BOX-PLOT Y LIMITS
+--------------------
+Position- and Experiment-level threshold box plots now inherit the y-axis range
+from the raw trial-level normalized contrast values for that same selection.
 
-    box       = Q1 to Q3
-    centre    = median
-    whiskers  = observed min to max
-    dots      = individual included staircase thresholds
-    diamond   = arithmetic mean threshold actually used for sensitivity
-    red x     = excluded staircase threshold(s), if present
+So the box plot no longer zooms tightly around only the thresholds. It is shown
+on the same underlying contrast scale as the staircase trajectories, making
+changes across conditions easier to judge in context.
 
-The box is descriptive, not a confidence interval.
+This is implemented generically via PlotSpec xlim/ylim overrides.
 
-At Staircase level, the original individual trial trajectory + reversals view
-is retained.
+3. POSITION LEVEL = GROUPED BOX PLOTS
+-------------------------------------
+The old connected Base/Flanker component plot is removed.
 
-INTERACTIVE N
--------------
-When you switch to interactive analysis and change N, the Experiment-level
-box plot is rebuilt from the newly recomputed geometric-mean final-N
-threshold for every included staircase.
+At Position level PsyView now groups the individual staircase thresholds by
+the repository's experiment/category column and draws them side by side.
 
-So the visual chain is now:
+The category strings are NOT hard-coded. If a repository stores:
+    base / flanker
+you see:
+    base     flanker
 
-    choose N
-      -> one threshold per staircase
-      -> threshold distribution / box plot changes
-      -> arithmetic mean threshold changes
-      -> sensitivity changes
+If a compatible repository stores:
+    control / surround
+you see:
+    control  surround
 
-This is exactly separate from the individual Staircase view below it.
+At Experiment level the exact same generic helper naturally shows one box for
+the selected category.
+
+At Staircase level the individual trial/reversal trajectory remains unchanged.
+
+4. INTERACTIVE N
+----------------
+In interactive mode the box distributions are rebuilt from the recomputed
+final-N threshold of every staircase. Changing N therefore changes both the
+side-by-side Position boxes and the single Experiment box.
+
+5. FIT COLOUR CONVENTION
+------------------------
+Terminal and Matplotlib now enforce a generic convention:
+    fitted/model line curves -> red
+
+This is renderer-side and therefore also catches future line series labelled as
+a fit/curve without recolouring measurement points such as "Included in fit".
+
+6. GENERALISATION
+-----------------
+A reusable module is added:
+    src/psyview/plotting/boxplots.py
+
+It knows only:
+    category column
+    numeric value column
+    optional inclusion column
+    optional reference y values
+    labels/metadata
+
+It does not know about Base, Flanker, lateral sensitivity, or psychophysics.
 
 RUN
 ---
     .\run_psyview.bat
 
-Suggested check:
-    Lateral
-      -> Subject
-      -> Luminance
-      -> Position
-      -> Experiment
+Suggested test:
+    Lateral -> Subject -> Luminance -> Position
+        verify side-by-side category boxes
 
-Confirm box plot.
+    Down -> Experiment
+        verify one box and staircase-scale y limits
 
-Then:
-    A
-    Enter   (interactive)
-    left/right on N
+    Down -> Staircase
+        verify boxed Staircase row is visible
 
-Confirm the box changes.
+    Up
+        verify normal hierarchy navigation works
 
-Then:
-    Down
-
-Confirm the STAIRCASE selector row is visible and boxed, and left/right moves
-visibly among individual staircases while the trial/reversal plot changes.
+    A -> Enter, then change N
+        verify box distributions change

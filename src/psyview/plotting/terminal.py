@@ -3,6 +3,7 @@ from copy import deepcopy
 
 from textual_plotext import PlotextPlot
 
+from ..models import FIT_COLOR
 from .axes import axis_policy, finite, log_ticks, tick_label
 
 
@@ -85,7 +86,29 @@ class TerminalPlotRenderer:
             )
             getattr(plt, axis + 'lim')(*bounds)
 
-            if scale == 'log':
+            custom_ticks = getattr(
+                spec,
+                axis + 'ticks',
+                [],
+            )
+
+            if custom_ticks:
+                positions = [
+                    float(position)
+                    for position, _ in custom_ticks
+                ]
+                labels = [
+                    str(label)
+                    for _, label in custom_ticks
+                ]
+                getattr(
+                    plt,
+                    axis + 'ticks',
+                )(
+                    positions,
+                    labels,
+                )
+            elif scale == 'log':
                 ticks = log_ticks(limits)
                 getattr(plt, axis + 'ticks')(
                     ticks,
@@ -110,6 +133,21 @@ class TerminalPlotRenderer:
                 return series.label
             return None
 
+        def display_color(series):
+            # General visual convention: fitted/model curves are red.
+            # Restrict this to line series so labels such as "Included in fit"
+            # on measurement points are not recoloured.
+            label = (series.label or '').casefold()
+            if (
+                series.kind == 'line'
+                and (
+                    ' fit' in (' ' + label)
+                    or 'curve' in label
+                )
+            ):
+                return FIT_COLOR
+            return series.color
+
         # Measurements remain visible over uncertainty/trajectory lines.
         for series in sorted(
             spec.series,
@@ -119,7 +157,7 @@ class TerminalPlotRenderer:
                 if series.x and finite(series.x[0]):
                     plt.vertical_line(
                         series.x[0],
-                        color=series.color,
+                        color=display_color(series),
                     )
                 continue
 
@@ -127,7 +165,7 @@ class TerminalPlotRenderer:
                 if series.y and finite(series.y[0]):
                     plt.horizontal_line(
                         series.y[0],
-                        color=series.color,
+                        color=display_color(series),
                     )
                 continue
 
@@ -145,7 +183,7 @@ class TerminalPlotRenderer:
                     x_values,
                     y_values,
                     label=label_for(series),
-                    color=series.color,
+                    color=display_color(series),
                     marker='┃',
                 )
 
@@ -155,7 +193,7 @@ class TerminalPlotRenderer:
                 plt.scatter(
                     [x_value, x_value],
                     [lo, hi],
-                    color=series.color,
+                    color=display_color(series),
                     marker='━',
                 )
                 continue
@@ -177,7 +215,7 @@ class TerminalPlotRenderer:
                         x,
                         y,
                         label=label_for(series),
-                        color=series.color,
+                        color=display_color(series),
                         marker=(
                             series.marker
                             if series.kind == 'scatter'

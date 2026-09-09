@@ -1,14 +1,12 @@
-from textual.containers import HorizontalScroll, VerticalScroll
+from textual.containers import HorizontalScroll, Vertical
 from textual.widgets import Static
 
 
-class Hierarchy(VerticalScroll):
-    """Scrollable hierarchy so the deepest selector row is never clipped."""
+class Hierarchy(Vertical):
+    """Non-scrolling vertical hierarchy; the app owns arrow-key navigation."""
 
     async def show_state(self, state):
         await self.remove_children()
-
-        active_row = None
 
         for index, level in enumerate(state.adapter.levels()):
             if index > state.active:
@@ -28,16 +26,11 @@ class Hierarchy(VerticalScroll):
 
             for value in values:
                 chosen = (
-                    value
-                    == state.selected[index]
+                    value == state.selected[index]
                 )
-
                 label = (
                     f'{value:g}'
-                    if isinstance(
-                        value,
-                        (float, int),
-                    )
+                    if isinstance(value, (float, int))
                     else str(value)
                 )
 
@@ -45,24 +38,18 @@ class Hierarchy(VerticalScroll):
                     label,
                     classes=(
                         'choice'
-                        + (
-                            ' selected'
-                            if chosen
-                            else ''
-                        )
+                        + (' selected' if chosen else '')
                         + (
                             ' active'
                             if (
                                 chosen
-                                and index
-                                == state.active
+                                and index == state.active
                             )
                             else ''
                         )
                     ),
                     markup=False,
                 )
-
                 await row.mount(item)
 
                 if chosen:
@@ -70,15 +57,3 @@ class Hierarchy(VerticalScroll):
                         item.scroll_visible,
                         animate=False,
                     )
-
-            if index == state.active:
-                active_row = row
-
-        # With five lateral levels the final STAIRCASE row can otherwise be
-        # clipped by the finite hierarchy viewport. Keep the active row visible
-        # vertically as well as horizontally.
-        if active_row is not None:
-            active_row.call_after_refresh(
-                active_row.scroll_visible,
-                animate=False,
-            )

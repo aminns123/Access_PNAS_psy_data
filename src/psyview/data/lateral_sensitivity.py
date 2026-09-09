@@ -650,8 +650,7 @@ class LateralAdapter(CSVAdapter):
         from ..plotting.lateral_plots import (
             subject_isf_plot,
             lateral_profile_plot,
-            position_comparison_plot,
-            lateral_threshold_box_plot,
+            lateral_grouped_threshold_box_plot,
             lateral_staircase_plot,
         )
 
@@ -684,33 +683,45 @@ class LateralAdapter(CSVAdapter):
                 current_filters,
             )
 
-        if level == 2:
-            profile = self.select(
-                'profiles',
+        if level in (2, 3):
+            stairs = self.select(
+                'stairs',
                 current_filters,
             )
-            if profile.empty:
-                raise DatasetError(
-                    'No archived lateral-profile point '
-                    'matches this position.'
-                )
-            return position_comparison_plot(
-                profile.iloc[0],
+            trials = self.select(
+                'trials',
                 current_filters,
+            )
+
+            extra_metadata = {}
+            if level == 2:
+                profile = self.select(
+                    'profiles',
+                    current_filters,
+                )
+                if not profile.empty:
+                    row = profile.iloc[0]
+                    extra_metadata = {
+                        'Distance from flanker edge (deg)':
+                            row.distance_from_flanker_edge_deg,
+                        'ln(S_flanker/S_base)':
+                            row.log_sensitivity_ratio,
+                        'Pairwise spread':
+                            row.spread,
+                    }
+
+            return lateral_grouped_threshold_box_plot(
+                stairs,
+                trials,
+                current_filters,
+                threshold_column='threshold_last_five',
+                extra_metadata=extra_metadata,
             )
 
         stairs = self.select(
             'stairs',
             current_filters,
         )
-
-        if level == 3:
-            return lateral_threshold_box_plot(
-                stairs,
-                current_filters,
-                threshold_column='threshold_last_five',
-            )
-
         trials = self.select(
             'trials',
             current_filters,
