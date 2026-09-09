@@ -1,54 +1,51 @@
-PsyView CSF error-bar patch
-===========================
+PsyView TUI error-bar alignment patch
+=====================================
 
 PURPOSE
 -------
-Add descriptive error bars to archived CSF points using the list of included
-individual staircase thresholds at each spatial frequency.
+Improve terminal/TUI uncertainty bars without changing any scientific values
+or Matplotlib output.
 
-SCIENTIFIC DEFINITION
----------------------
-The archived CSF point is unchanged:
+WHAT CHANGES
+------------
+Two-point vertical intervals are now drawn in the terminal as:
 
-    mean_threshold = arithmetic mean of included staircase thresholds
-    sensitivity = 1 / mean_threshold
+    ━
+    ┃
+    ┃   ●   <- measurement scatter is drawn last/on top
+    ┃
+    ━
 
-The new bar is descriptive across-staircase variability:
+rather than as a Plotext braille line.
 
-    sd_threshold = sample SD of included staircase thresholds (ddof=1)
+Why:
+Plotext's braille rasterisation can place a two-point vertical line in a
+neighbouring sub-cell from the scatter point. The new renderer samples the
+interval at the exact same scientific x coordinate as the point and uses heavy
+vertical/cap glyphs. This makes the bars:
+  - better centred on the scatter point
+  - visually heavier/more distinctive
+  - still compatible with linear and log y axes
 
-    lower sensitivity = 1 / (mean_threshold + sd_threshold)
-    upper sensitivity = 1 / (mean_threshold - sd_threshold)
+The shared PlotSpec remains unchanged, so Matplotlib output is untouched.
 
-This keeps the archived CSF point exactly unchanged and propagates the
-threshold variability through the same reciprocal sensitivity definition.
-The bars are explicitly labelled as descriptive across-staircase variability,
-NOT confidence intervals.
+REPLACE
+-------
+    src/psyview/plotting/terminal.py
 
-Only primary-included staircases contribute. Frequency points excluded from the
-CSF fit still retain their measurement/error bar because the exclusion concerns
-the fit, not the underlying staircase-derived observation.
+OPTIONAL NEW TEST
+-----------------
+    tests/test_terminal_intervals.py
 
-COPY / REPLACE
---------------
-REPLACE:
-    src/psyview/plotting/pnas_plots.py
-    src/psyview/data/pnas_psychophysics.py
+No dependency or pyproject.toml change is required.
 
-OPTIONAL NEW TEST:
-    tests/test_csf_errorbars.py
-
-No pyproject.toml change is needed.
-
-TEST
-----
-Launch normally:
-
+RUN
+---
     .\run_psyview.bat
 
-Open the CSF/PSF dataset and go:
-    Subject -> Luminance
+Check:
+  CSF Subject -> Luminance
+  lateral Subject -> Luminance
+  PSF Subject level
 
-The CSF points should now have vertical error bars.
-
-The existing lateral-sensitivity error bars are untouched.
+The same improvement applies to vertical percentile/error intervals in the TUI.
