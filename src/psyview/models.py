@@ -17,6 +17,7 @@ class Series:
     kind: str = "line"
     color: str = "cyan"
     dashed: bool = False
+    marker: str = '●'
 
 
 @dataclass

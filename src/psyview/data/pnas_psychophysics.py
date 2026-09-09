@@ -17,8 +17,29 @@ class PNASAdapter(CSVAdapter):
             raise DatasetError('Staircase condition has no matching participant/luminance in preferred-frequency table.')
         self.tables['stairs'] = joined
         self.filtered.clear()
+        self._interactive = None
+        self.analysis_source_stamp = tuple((source, (self.root/self.config['sources'][source]).stat().st_mtime_ns,
+                                           (self.root/self.config['sources'][source]).stat().st_size)
+                                          for source in ('psf', 'csf', 'stairs', 'trials', 'reversals')
+                                          if (self.root/self.config['sources'][source]).exists())
 
-    def get_plot(self, level, current_filters):
+    def interactive(self):
+        if self._interactive is None:
+            from ..analysis.interactive import InteractiveAnalysis
+            self._interactive = InteractiveAnalysis(self)
+        return self._interactive
+
+    def get_plot(self, level, current_filters, analysis=None):
+        if analysis is not None and analysis.mode == 'interactive':
+            engine = self.interactive()
+            with engine.lock:
+                return engine.plot(level, current_filters, analysis.n_reversals)
+        spec = self.archived_plot(level, current_filters)
+        spec.title = 'ARCHIVED PNAS | ' + spec.title
+        spec.metadata['Analysis'] = 'ARCHIVED PNAS'
+        return spec
+
+    def archived_plot(self, level, current_filters):
         if level == 0:
             return subject_plot(self.select('psf', current_filters), current_filters)
         if level >= 2:

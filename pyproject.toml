@@ -7,7 +7,7 @@ name = "psyview"
 version = "0.1.0"
 description = "Read-only terminal explorer for hierarchical experimental datasets"
 requires-python = ">=3.12"
-dependencies = ["textual>=1,<9", "textual-plotext>=1,<2", "pandas>=2.2,<4", "numpy>=2,<3", "matplotlib>=3.9,<4", "PyYAML>=6,<7"]
+dependencies = ["textual>=1,<9", "textual-plotext>=1,<2", "plotext>=5.3,<6", "pandas>=2.2,<4", "numpy>=2,<3", "scipy>=1.14,<2", "matplotlib>=3.9,<4", "PyYAML>=6,<7"]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-asyncio>=0.24"]
@@ -19,7 +19,7 @@ psyview = "psyview.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-psyview = ["configs/*.yaml"]
+psyview = ["configs/*.yaml", "analysis/PROVENANCE.md"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

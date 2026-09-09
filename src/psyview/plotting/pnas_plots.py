@@ -1,4 +1,5 @@
 from ..models import PlotSpec, Series
+from .axes import finite
 
 
 def subject_plot(frame, filters):
@@ -34,7 +35,7 @@ def staircase_plot(stairs, trials, reversals, filters, csf):
     if individual and not stairs.empty:
         row = stairs.iloc[0]
         for column in ['n_trials', 'n_trials_used', 'n_detected_reversals', 'threshold_last8_median', 'included_in_primary_csf']:
-            metadata[column] = row[column]
+            metadata[column] = row.get(column)
     excluded = stairs.loc[~stairs.included_in_primary_csf]
     if not excluded.empty:
         metadata['Exclusion reason'] = '; '.join(f'{row.staircase_id}: {row.exclusion_reason}' for row in excluded.itertuples())
@@ -43,12 +44,14 @@ def staircase_plot(stairs, trials, reversals, filters, csf):
     palette = ['cyan', 'blue', 'green', 'magenta', 'yellow', 'white']
     for index, row in enumerate(stairs.itertuples()):
         color = palette[index % len(palette)] if row.included_in_primary_csf else 'red'
-        label = row.staircase_id + ('' if row.included_in_primary_csf else ' [EXCLUDED]')
+        label = str(row.staircase_id) + ('' if row.included_in_primary_csf else ' [EXCLUDED]')
         part = trials.loc[trials.staircase_id.eq(row.staircase_id)].sort_values('trial_within_staircase')
         rv = reversals.loc[reversals.staircase_id.eq(row.staircase_id)]
         spec.series.append(Series(part.trial_within_staircase.tolist(), part.contrast_normalized_source.tolist(), label, color=color, dashed=not row.included_in_primary_csf))
         for last, marker_color, suffix in [(False, color, 'reversals'), (True, 'yellow' if individual else color, 'final eight')]:
             points = rv.loc[rv.in_last8_point_estimate.eq(last)]
-            spec.series.append(Series(points.trial_within_staircase.tolist(), points.contrast_normalized_source.tolist(), suffix if individual else '', 'scatter', marker_color))
-        spec.series.append(Series([], [row.threshold_last8_median], 'Archived threshold' if individual else '', 'hline', color, True))
+            spec.series.append(Series(points.trial_within_staircase.tolist(), points.contrast_normalized_source.tolist(), suffix if individual else '', 'scatter', marker_color, marker='◆' if last else '●'))
+        threshold = getattr(row, 'threshold_last8_median', None)
+        if finite(threshold):
+            spec.series.append(Series([], [threshold], 'Archived threshold' if individual else '', 'hline', color, True))
     return spec

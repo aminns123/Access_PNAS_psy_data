@@ -20,7 +20,7 @@ async def test_full_navigation_and_save(adapter, tmp_path):
         await pilot.press('r')
         assert app.selection.selected == previous
         await pilot.press('h', 'escape')
-        app.save_screenshot('staircase.svg', path='.tools')
+        app.save_screenshot('staircase.svg', path=str(tmp_path))
         await pilot.resize_terminal(75, 28)
         await pilot.press('left', 'up', 'up', 'up', 'home')
         assert app.selection.active == 0

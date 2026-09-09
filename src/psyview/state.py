@@ -1,3 +1,16 @@
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class AnalysisState:
+    mode: str = 'archived'
+    n_reversals: int = 8
+
+    def __post_init__(self):
+        if self.mode not in ('archived', 'interactive') or self.n_reversals < 1:
+            raise ValueError('Invalid analysis mode or reversal count')
+
+
 class SelectionState:
     """Remember each branch independently; only ancestors propagate as filters."""
     def __init__(self, adapter):

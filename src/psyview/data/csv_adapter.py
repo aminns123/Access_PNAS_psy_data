@@ -55,7 +55,11 @@ class CSVAdapter(DatasetAdapter):
 
     def get_values(self, level, current_filters):
         item = self.levels()[level]
-        return sorted(self.select(item.source, current_filters)[item.column].dropna().unique().tolist())
+        values = self.select(item.source, current_filters)[item.column].dropna().unique().tolist()
+        import re
+        def natural(value):
+            return tuple((0, int(p)) if p.isdigit() else (1, p.casefold()) for p in re.split(r'(\d+)', str(value)))
+        return sorted(values) if pd.api.types.is_numeric_dtype(self.table(item.source)[item.column]) else sorted(values, key=natural)
 
     def get_plot(self, level, current_filters):
         definition = self.config.get('plots', {}).get(self.levels()[level].column)

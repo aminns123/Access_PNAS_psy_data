@@ -6,11 +6,8 @@ import pandas as pd
 def discover(root=None):
     if root is not None:
         return Path(root).expanduser().resolve()
-    cwd = Path.cwd()
-    for base in (cwd, cwd.parent, Path(__file__).resolve().parents[3]):
-        for candidate in (base, base / 'PNAS_Psychopysics_data'):
-            if (candidate / 'data/processed/preferred_frequency.csv').is_file() and (candidate / 'data/raw/staircase_summary.csv').is_file():
-                return candidate.resolve()
+    # Dataset choice is explicit or made in the browser, never inferred from
+    # a convenient archive copy in the software checkout.
     return None
 
 

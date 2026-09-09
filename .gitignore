@@ -1,4 +1,6 @@
 .venv/
+.audit-venv/
+.venv.incompatible-*/
 .tools/
 __pycache__/
 *.py[cod]
