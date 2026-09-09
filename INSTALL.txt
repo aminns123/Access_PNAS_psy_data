@@ -1,113 +1,69 @@
-PsyView patch: hierarchy navigation + shared-scale grouped box plots
-===================================================================
+PsyView compact breadcrumb hierarchy patch
+==========================================
 
 REPLACE:
-    src/psyview/models.py
-    src/psyview/app.py
     src/psyview/ui/hierarchy.py
-    src/psyview/plotting/axes.py
-    src/psyview/plotting/terminal.py
-    src/psyview/plotting/matplotlib_plots.py
-    src/psyview/plotting/lateral_plots.py
-    src/psyview/data/lateral_sensitivity.py
-    src/psyview/analysis/lateral_interactive.py
+    src/psyview/app.py
     src/psyview/ui/help_screen.py
 
-NEW:
-    src/psyview/plotting/boxplots.py
+WHAT CHANGES
+------------
+Instead of keeping every previous hierarchy level as a full boxed row, PsyView
+now collapses the selected path into one compact breadcrumb.
 
-OPTIONAL:
-    tests/test_generic_grouped_boxplot.py
+Example at Staircase level:
 
-1. HIERARCHY / UP-ARROW FIX
----------------------------
-The previous VerticalScroll hierarchy could capture arrow keys when the fifth
-STAIRCASE row appeared.
+    PATH: P01 | 40 | 0.768 | base | S1
 
-Hierarchy is now a normal Vertical container again. There is no extra vertical
-scrollbar. The app gives it enough room for five boxed rows.
+    STAIRCASE
+    [ S1 ] [ S2 ] [ S3 ] [ S4 ]
 
-Expected:
-    at Staircase level, the boxed selector remains visible;
-    Up returns to Experiment normally.
+Only the CURRENT level remains as a full selector row.
 
-2. BOX-PLOT Y LIMITS
---------------------
-Position- and Experiment-level threshold box plots now inherit the y-axis range
-from the raw trial-level normalized contrast values for that same selection.
+This means:
+    - the hierarchy height stays constant as you move deeper
+    - the plot no longer gets pushed downward
+    - no vertical hierarchy scrollbar grows with depth
+    - Up / Down continue to move between hierarchy levels
+    - Left / Right continue to change the current value
+    - the breadcrumb tells you exactly which branch you are on
 
-So the box plot no longer zooms tightly around only the thresholds. It is shown
-on the same underlying contrast scale as the staircase trajectories, making
-changes across conditions easier to judge in context.
+GENERALITY
+----------
+The breadcrumb does not know about Subject, Luminance, Position, Experiment,
+or Staircase. It simply displays the selected values from whatever hierarchy
+the active adapter provides.
 
-This is implemented generically via PlotSpec xlim/ylim overrides.
+So a future dataset might show:
 
-3. POSITION LEVEL = GROUPED BOX PLOTS
--------------------------------------
-The old connected Base/Flanker component plot is removed.
+    PATH: mouse_07 | session_3 | control | trial_12
 
-At Position level PsyView now groups the individual staircase thresholds by
-the repository's experiment/category column and draws them side by side.
-
-The category strings are NOT hard-coded. If a repository stores:
-    base / flanker
-you see:
-    base     flanker
-
-If a compatible repository stores:
-    control / surround
-you see:
-    control  surround
-
-At Experiment level the exact same generic helper naturally shows one box for
-the selected category.
-
-At Staircase level the individual trial/reversal trajectory remains unchanged.
-
-4. INTERACTIVE N
-----------------
-In interactive mode the box distributions are rebuilt from the recomputed
-final-N threshold of every staircase. Changing N therefore changes both the
-side-by-side Position boxes and the single Experiment box.
-
-5. FIT COLOUR CONVENTION
-------------------------
-Terminal and Matplotlib now enforce a generic convention:
-    fitted/model line curves -> red
-
-This is renderer-side and therefore also catches future line series labelled as
-a fit/curve without recolouring measurement points such as "Included in fit".
-
-6. GENERALISATION
------------------
-A reusable module is added:
-    src/psyview/plotting/boxplots.py
-
-It knows only:
-    category column
-    numeric value column
-    optional inclusion column
-    optional reference y values
-    labels/metadata
-
-It does not know about Base, Flanker, lateral sensitivity, or psychophysics.
+without any PsyView UI changes.
 
 RUN
 ---
     .\run_psyview.bat
 
-Suggested test:
-    Lateral -> Subject -> Luminance -> Position
-        verify side-by-side category boxes
+Suggested check:
+    move from Subject all the way down to Staircase.
 
-    Down -> Experiment
-        verify one box and staircase-scale y limits
+The plot should remain at essentially the same vertical position throughout,
+while the path changes from something like:
 
-    Down -> Staircase
-        verify boxed Staircase row is visible
+    PATH: P01
 
-    Up
-        verify normal hierarchy navigation works
+to:
 
-    A -> Enter, then change N
-        verify box distributions change
+    PATH: P01 | 40
+
+to:
+
+    PATH: P01 | 40 | 0.768
+
+to:
+
+    PATH: P01 | 40 | 0.768 | base
+
+to:
+
+    PATH: P01 | 40 | 0.768 | base | S1
