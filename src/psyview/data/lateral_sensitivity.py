@@ -19,13 +19,19 @@ class LateralAdapter(CSVAdapter):
 
         conditions = self.table('conditions').copy(deep=True)
         if conditions.condition_id.duplicated().any():
-            raise DatasetError('Duplicate condition_id in lateral condition summary.')
+            raise DatasetError(
+                'Duplicate condition_id in lateral condition summary.'
+            )
 
         self.table('endpoints')
 
         profiles = self.table('profiles').copy(deep=True)
         candidates = (
-            profiles.exclusion_candidate.dropna().astype(str).unique().tolist()
+            profiles.exclusion_candidate
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
         )
         if 'storage_script_active_exclusions' in candidates:
             profiles = profiles.loc[
@@ -93,6 +99,7 @@ class LateralAdapter(CSVAdapter):
         self.tables['stairs'] = stairs
         self.filtered.clear()
         self._interactive = None
+        self._fit_cache = {}
 
     def table(self, source):
         frame = super().table(source)
@@ -100,7 +107,11 @@ class LateralAdapter(CSVAdapter):
         marker = f'_lateral_enriched_{source}'
         if source == 'trials' and marker not in self.tables:
             conditions = super().table('conditions')[
-                ['condition_id', 'participant_id', 'luminance_label_cd_m2']
+                [
+                    'condition_id',
+                    'participant_id',
+                    'luminance_label_cd_m2',
+                ]
             ]
             enriched = frame.merge(
                 conditions,
@@ -126,10 +137,15 @@ class LateralAdapter(CSVAdapter):
                     'probe_position_deg',
                     'included_for_baseline_candidate',
                 ]
-            ].drop_duplicates(['condition_id', 'staircase_id'])
+            ].drop_duplicates(
+                ['condition_id', 'staircase_id']
+            )
             enriched = frame.merge(
                 lookup,
-                on=['condition_id', 'staircase_id'],
+                on=[
+                    'condition_id',
+                    'staircase_id',
+                ],
                 how='left',
                 validate='many_to_one',
             )
@@ -141,24 +157,194 @@ class LateralAdapter(CSVAdapter):
 
     def interactive(self):
         if self._interactive is None:
-            from ..analysis.lateral_interactive import LateralInteractiveAnalysis
+            from ..analysis.lateral_interactive import (
+                LateralInteractiveAnalysis,
+            )
             self._interactive = LateralInteractiveAnalysis(self)
         return self._interactive
 
-    def get_plot(self, level, current_filters, analysis=None):
-        if analysis is not None and analysis.mode == 'interactive':
+    def supports_fit(self, level):
+        """The equation is fitted to the current luminance-level profile."""
+        return level == 1
+
+    def _condition_id(self, current_filters):
+        filters = {
+            'participant_id':
+                current_filters['participant_id'],
+            'luminance_label_cd_m2':
+                current_filters['luminance_label_cd_m2'],
+        }
+        rows = self.select(
+            'conditions',
+            filters,
+        )
+        if len(rows) != 1:
+            raise DatasetError(
+                f'Expected exactly one condition for {filters}; '
+                f'found {len(rows)}.'
+            )
+        return rows.iloc[0].condition_id
+
+    def _fit_profile(
+        self,
+        current_filters,
+        analysis=None,
+    ):
+        condition_id = self._condition_id(
+            current_filters
+        )
+
+        if (
+            analysis is not None
+            and analysis.mode == 'interactive'
+        ):
+            profile = self.interactive().profile(
+                condition_id,
+                analysis.n_reversals,
+            )
+            cache_key = (
+                'interactive',
+                condition_id,
+                analysis.n_reversals,
+            )
+        else:
+            profile = self.select(
+                'profiles',
+                {
+                    'participant_id':
+                        current_filters['participant_id'],
+                    'luminance_label_cd_m2':
+                        current_filters['luminance_label_cd_m2'],
+                },
+            )
+            cache_key = (
+                'archived',
+                condition_id,
+            )
+
+        if cache_key not in self._fit_cache:
+            from ..analysis.lateral_fit import (
+                fit_lateral_profile,
+            )
+            self._fit_cache[
+                cache_key
+            ] = fit_lateral_profile(
+                profile
+            )
+
+        return self._fit_cache[
+            cache_key
+        ]
+
+    def get_plot_with_fit(
+        self,
+        level,
+        current_filters,
+        analysis=None,
+    ):
+        if not self.supports_fit(level):
+            return self.get_plot(
+                level,
+                current_filters,
+                analysis,
+            )
+
+        spec = self.get_plot(
+            level,
+            current_filters,
+            analysis,
+        )
+
+        result = self._fit_profile(
+            current_filters,
+            analysis,
+        )
+
+        from ..models import Series
+        from ..analysis.lateral_fit import (
+            fit_display_text,
+        )
+
+        spec.series.append(
+            Series(
+                result.x_curve,
+                result.y_curve,
+                (
+                    'INTERACTIVE / DIAGNOSTIC Eq. B.25 fit '
+                    f'(fₙ={result.frequency_cpd:.3g} cpd)'
+                ),
+                color='yellow',
+            )
+        )
+
+        spec.metadata['_fit_display'] = (
+            fit_display_text(result)
+        )
+        spec.metadata[
+            'Diagnostic fitted f_n (cpd)'
+        ] = round(
+            result.frequency_cpd,
+            6,
+        )
+        spec.metadata[
+            'Diagnostic fit FMS'
+        ] = round(
+            result.frequency_match_score,
+            6,
+        )
+        spec.metadata[
+            'Diagnostic fit points'
+        ] = result.n_points
+        spec.metadata[
+            'Diagnostic fit weighting'
+        ] = (
+            'full spread with sigma floor 0.05'
+        )
+
+        spec.notes += (
+            ' The yellow curve is a NEW on-demand diagnostic fit of thesis '
+            'Eq. B.25 to the currently displayed profile. It is weighted by '
+            'the full recorded spread with a 0.05 floor. It is not an '
+            'archived historical fit and does not replace the archived ISF.'
+        )
+        return spec
+
+    def get_plot(
+        self,
+        level,
+        current_filters,
+        analysis=None,
+    ):
+        if (
+            analysis is not None
+            and analysis.mode == 'interactive'
+        ):
             engine = self.interactive()
             with engine.lock:
                 return engine.plot(
-                    level, current_filters, analysis.n_reversals
+                    level,
+                    current_filters,
+                    analysis.n_reversals,
                 )
 
-        spec = self.archived_plot(level, current_filters)
-        spec.title = 'ARCHIVED LATERAL | ' + spec.title
-        spec.metadata['Analysis'] = self.archived_analysis_label
+        spec = self.archived_plot(
+            level,
+            current_filters,
+        )
+        spec.title = (
+            'ARCHIVED LATERAL | '
+            + spec.title
+        )
+        spec.metadata[
+            'Analysis'
+        ] = self.archived_analysis_label
         return spec
 
-    def archived_plot(self, level, current_filters):
+    def archived_plot(
+        self,
+        level,
+        current_filters,
+    ):
         from ..plotting.lateral_plots import (
             subject_isf_plot,
             lateral_profile_plot,
@@ -167,32 +353,64 @@ class LateralAdapter(CSVAdapter):
         )
 
         if level == 0:
-            endpoints = self.select('endpoints', current_filters)
-            return subject_isf_plot(endpoints, current_filters)
+            endpoints = self.select(
+                'endpoints',
+                current_filters,
+            )
+            return subject_isf_plot(
+                endpoints,
+                current_filters,
+            )
 
         condition_filters = {
             key: value
             for key, value in current_filters.items()
-            if key in ('participant_id', 'luminance_label_cd_m2')
+            if key in (
+                'participant_id',
+                'luminance_label_cd_m2',
+            )
         }
 
         if level == 1:
-            profile = self.select('profiles', condition_filters)
-            return lateral_profile_plot(profile, current_filters)
-
-        if level == 2:
-            profile = self.select('profiles', current_filters)
-            if profile.empty:
-                raise DatasetError(
-                    'No archived lateral-profile point matches this position.'
-                )
-            return position_comparison_plot(
-                profile.iloc[0], current_filters
+            profile = self.select(
+                'profiles',
+                condition_filters,
+            )
+            return lateral_profile_plot(
+                profile,
+                current_filters,
             )
 
-        stairs = self.select('stairs', current_filters)
-        trials = self.select('trials', current_filters)
-        reversals = self.select('reversals', current_filters)
+        if level == 2:
+            profile = self.select(
+                'profiles',
+                current_filters,
+            )
+            if profile.empty:
+                raise DatasetError(
+                    'No archived lateral-profile point '
+                    'matches this position.'
+                )
+            return position_comparison_plot(
+                profile.iloc[0],
+                current_filters,
+            )
+
+        stairs = self.select(
+            'stairs',
+            current_filters,
+        )
+        trials = self.select(
+            'trials',
+            current_filters,
+        )
+        reversals = self.select(
+            'reversals',
+            current_filters,
+        )
         return lateral_staircase_plot(
-            stairs, trials, reversals, current_filters
+            stairs,
+            trials,
+            reversals,
+            current_filters,
         )

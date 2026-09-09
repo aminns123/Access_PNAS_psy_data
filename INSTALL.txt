@@ -1,51 +1,98 @@
-PsyView TUI error-bar alignment patch
-=====================================
+PsyView on-demand lateral Eq. B.25 fit + box-shaped TUI plot
+============================================================
 
-PURPOSE
--------
-Improve terminal/TUI uncertainty bars without changing any scientific values
-or Matplotlib output.
+NEW:
+    src/psyview/analysis/lateral_fit.py
+    tests/test_lateral_fit.py       (optional regression test)
 
-WHAT CHANGES
-------------
-Two-point vertical intervals are now drawn in the terminal as:
+REPLACE:
+    src/psyview/data/lateral_sensitivity.py
+    src/psyview/app.py
+    src/psyview/ui/help_screen.py
 
-    ━
-    ┃
-    ┃   ●   <- measurement scatter is drawn last/on top
-    ┃
-    ━
-
-rather than as a Plotext braille line.
-
-Why:
-Plotext's braille rasterisation can place a two-point vertical line in a
-neighbouring sub-cell from the scatter point. The new renderer samples the
-interval at the exact same scientific x coordinate as the point and uses heavy
-vertical/cap glyphs. This makes the bars:
-  - better centred on the scatter point
-  - visually heavier/more distinctive
-  - still compatible with linear and log y axes
-
-The shared PlotSpec remains unchanged, so Matplotlib output is untouched.
-
-REPLACE
--------
+DO NOT replace:
     src/psyview/plotting/terminal.py
 
-OPTIONAL NEW TEST
------------------
-    tests/test_terminal_intervals.py
+Keep your latest terminal.py from the previous centred/heavy error-bar patch.
 
-No dependency or pyproject.toml change is required.
+WHAT YOU GET
+------------
+At the lateral dataset:
+
+    Subject
+      -> Luminance
+
+press:
+
+    F
+
+PsyView computes a NEW diagnostic fit of thesis Eq. B.25 to the currently
+displayed lateral-sensitivity profile:
+
+    R(X) = A exp(-lambda |X|)
+           [cos(kX + phi) - sign(X) sin(kX + phi)]
+
+where:
+    X = distance from flanker edge (deg)
+    f_n = k / (2*pi)
+
+The fit uses:
+    sigma_i = max(full recorded spread_i, 0.05)
+
+This follows the weighting convention documented by the lateral archive.
+It does NOT use spread/2 as fitting sigma; spread/2 remains the display-bar
+convention.
+
+Press F again to hide the fit.
+
+The fit line and parameter block are part of the same PlotSpec, so pressing M
+shows the SAME selected diagnostic fit in Matplotlib.
+
+ARCHIVED / INTERACTIVE DISTINCTION
+----------------------------------
+Archived mode:
+    F fits the archived deterministic lateral profile.
+
+Interactive N mode:
+    PsyView first recomputes the selected final-N profile and then F fits that
+    current profile.
+
+The fit is always labelled:
+    INTERACTIVE / DIAGNOSTIC FIT
+
+It is NOT called an archived historical fit and does not replace archived ISF
+endpoints, because the historical fit-row/input mapping remains unresolved.
+
+TUI SHAPE
+---------
+The terminal plot is now centred in a smaller, box-like panel:
+    width 72 terminal cells
+    height 29 terminal rows
+
+This is intended to look closer to the near-square plotting boxes used in the
+paper while leaving room underneath for the fitted equation and parameters.
+Compact terminals automatically fall back to a full-width shorter plot.
+
+NO DEPENDENCY CHANGE
+--------------------
+SciPy is already in pyproject.toml, so no reinstall or pyproject edit is needed.
 
 RUN
 ---
     .\run_psyview.bat
 
-Check:
-  CSF Subject -> Luminance
-  lateral Subject -> Luminance
-  PSF Subject level
+Then:
+    Lateral dataset
+      -> Subject
+      -> Luminance
+      -> F
 
-The same improvement applies to vertical percentile/error intervals in the TUI.
+Expected:
+    points + error bars + yellow smooth fit
+    equation and parameters below the TUI plot
+
+Useful:
+    M  same fitted PlotSpec in Matplotlib
+    F  hide fit
+    left/right  change luminance while fit remains enabled
+    A + Enter  switch archived/interactive; fit follows current profile

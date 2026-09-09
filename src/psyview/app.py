@@ -1,12 +1,17 @@
 from textual.app import App, ComposeResult
+from textual.containers import Horizontal
 from textual.widgets import Static, Footer
 from textual_plotext import PlotextPlot
+
 from .state import SelectionState, AnalysisState
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from .ui.hierarchy import Hierarchy
 from .ui.help_screen import HelpScreen
-from .plotting.terminal import TerminalPlotRenderer, ScientificPlot
+from .plotting.terminal import (
+    TerminalPlotRenderer,
+    ScientificPlot,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,16 +26,54 @@ class PsyView(App):
     .choice { width: auto; min-width: 7; height: 3; padding: 0 1; margin-right: 1; border: blank; color: #8092a9; }
     .selected { background: #203348; color: #dae5f2; }
     .active { border: dashed #6de5f2; color: #ffffff; }
-    PlotextPlot { height: 1fr; min-height: 8; }
-    #info { height: auto; max-height: 7; padding: 0 1; color: #a8bacd; overflow-y: auto; }
+
+    #plotbox {
+        height: 30;
+        align-horizontal: center;
+    }
+    #plot {
+        width: 72;
+        height: 29;
+        min-height: 18;
+    }
+
+    #fitinfo {
+        height: auto;
+        max-height: 5;
+        padding: 0 1;
+        color: #e4c25a;
+        overflow-y: auto;
+    }
+    #info {
+        height: auto;
+        max-height: 7;
+        padding: 0 1;
+        color: #a8bacd;
+        overflow-y: auto;
+    }
     #analysis { height: 2; padding: 0 1; color: #72d9e6; }
-    HelpScreen { align: center middle; background: #000000 70%; }
-    #help { width: 72; height: auto; padding: 2; border: round #6de5f2; background: #142132; }
+
+    HelpScreen {
+        align: center middle;
+        background: #000000 70%;
+    }
+    #help {
+        width: 72;
+        height: auto;
+        padding: 2;
+        border: round #6de5f2;
+        background: #142132;
+    }
+
     Screen.compact #heading { height: 2; }
     Screen.compact .choice-row { height: 2; }
     Screen.compact .choice { height: 1; border: none; }
+    Screen.compact #plotbox { height: 19; }
+    Screen.compact #plot { width: 100%; height: 18; }
+    Screen.compact #fitinfo { max-height: 3; }
     Screen.compact #info { max-height: 2; }
     '''
+
     BINDINGS = [
         ('left', 'previous', 'Previous'),
         ('right', 'next', 'Next'),
@@ -42,6 +85,7 @@ class PsyView(App):
         ('r', 'reload', 'Reload'),
         ('m', 'matplotlib', 'Matplotlib'),
         ('s', 'save', 'Save PNG'),
+        ('f', 'fit', 'Fit'),
         ('h', 'help', 'Help'),
         ('question_mark', 'help', 'Help'),
         ('q', 'quit', 'Quit'),
@@ -58,11 +102,21 @@ class PsyView(App):
         self.spec = None
         self.export_dir = export_dir
         self.figure_processes = []
+
         default_n = int(
-            getattr(adapter, 'default_n_reversals', 8)
+            getattr(
+                adapter,
+                'default_n_reversals',
+                8,
+            )
         )
-        self.analysis = AnalysisState('archived', default_n)
+        self.analysis = AnalysisState(
+            'archived',
+            default_n,
+        )
         self.analysis_focus = False
+        self.fit_enabled = False
+
         self.analysis_executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix='psyview-analysis',
@@ -80,9 +134,20 @@ class PsyView(App):
             markup=False,
         )
         yield Hierarchy()
-        yield Static(id='analysis', markup=False)
-        yield ScientificPlot()
-        yield Static(id='info', markup=False)
+        yield Static(
+            id='analysis',
+            markup=False,
+        )
+        with Horizontal(id='plotbox'):
+            yield ScientificPlot(id='plot')
+        yield Static(
+            id='fitinfo',
+            markup=False,
+        )
+        yield Static(
+            id='info',
+            markup=False,
+        )
         yield Footer()
 
     async def on_mount(self):
@@ -90,7 +155,10 @@ class PsyView(App):
             self.size.height < 40,
             'compact',
         )
-        self.set_interval(.5, self.check_figures)
+        self.set_interval(
+            .5,
+            self.check_figures,
+        )
         await self.redraw()
 
     def on_resize(self, event):
@@ -100,11 +168,15 @@ class PsyView(App):
         )
 
     def check_figures(self):
-        from .plotting.matplotlib_plots import LOG_PATH
+        from .plotting.matplotlib_plots import (
+            LOG_PATH,
+        )
         for process in self.figure_processes[:]:
             code = process.poll()
             if code is not None:
-                self.figure_processes.remove(process)
+                self.figure_processes.remove(
+                    process
+                )
                 if code:
                     self.notify(
                         f'Matplotlib failed (exit {code}). '
@@ -114,6 +186,55 @@ class PsyView(App):
                         timeout=15,
                     )
 
+    def _fit_supported_here(self):
+        supports = getattr(
+            self.adapter,
+            'supports_fit',
+            None,
+        )
+        return bool(
+            supports
+            and supports(
+                self.selection.active
+            )
+        )
+
+    @staticmethod
+    def _prepare_plot(
+        adapter,
+        level,
+        filters,
+        analysis,
+        use_fit,
+    ):
+        if (
+            use_fit
+            and hasattr(
+                adapter,
+                'get_plot_with_fit',
+            )
+        ):
+            return adapter.get_plot_with_fit(
+                level,
+                filters,
+                analysis,
+            )
+
+        if (
+            analysis is not None
+            and analysis.mode == 'interactive'
+        ):
+            return adapter.get_plot(
+                level,
+                filters,
+                analysis,
+            )
+
+        return adapter.get_plot(
+            level,
+            filters,
+        )
+
     async def redraw(self):
         self.plot_generation += 1
         generation = self.plot_generation
@@ -122,56 +243,113 @@ class PsyView(App):
             self.analysis_task.cancel()
 
         self.spec = None
+        self.query_one(
+            '#fitinfo',
+            Static,
+        ).update('')
 
-        if self.analysis.mode == 'interactive':
-            self.query_one(PlotextPlot).plt.clear_figure()
-            self.query_one(PlotextPlot).refresh()
+        use_fit = (
+            self.fit_enabled
+            and self._fit_supported_here()
+        )
+        background_work = (
+            self.analysis.mode == 'interactive'
+            or use_fit
+        )
+
+        if background_work:
+            self.query_one(
+                PlotextPlot
+            ).plt.clear_figure()
+            self.query_one(
+                PlotextPlot
+            ).refresh()
 
         self.show_analysis()
-        await self.query_one(Hierarchy).show_state(
+        await self.query_one(
+            Hierarchy
+        ).show_state(
             self.selection
         )
 
-        if self.analysis.mode == 'interactive':
+        if background_work:
             adapter = self.adapter
             level = self.selection.active
             filters = self.selection.filters()
-            analysis = self.analysis
+            analysis = (
+                self.analysis
+                if self.analysis.mode == 'interactive'
+                else None
+            )
 
-            self.query_one(PlotextPlot).plt.clear_figure()
-            self.query_one(PlotextPlot).refresh()
-            self.query_one('#info', Static).update(
-                f'Computing interactive final '
-                f'{analysis.n_reversals} reversals… '
-                f'Navigation remains available.'
+            self.query_one(
+                PlotextPlot
+            ).plt.clear_figure()
+            self.query_one(
+                PlotextPlot
+            ).refresh()
+
+            if use_fit:
+                message = (
+                    'Fitting thesis Eq. B.25 to the '
+                    'current lateral-sensitivity profile…'
+                )
+            else:
+                message = (
+                    f'Computing interactive final '
+                    f'{self.analysis.n_reversals} reversals…'
+                )
+
+            self.query_one(
+                '#info',
+                Static,
+            ).update(
+                message
+                + ' Navigation remains available.'
             )
 
             async def compute():
                 try:
-                    spec = await asyncio.get_running_loop().run_in_executor(
-                        self.analysis_executor,
-                        adapter.get_plot,
-                        level,
-                        filters,
-                        analysis,
+                    spec = await (
+                        asyncio.get_running_loop()
+                        .run_in_executor(
+                            self.analysis_executor,
+                            self._prepare_plot,
+                            adapter,
+                            level,
+                            filters,
+                            analysis,
+                            use_fit,
+                        )
                     )
-                    if generation == self.plot_generation:
-                        self.display_spec(spec)
+                    if (
+                        generation
+                        == self.plot_generation
+                    ):
+                        self.display_spec(
+                            spec
+                        )
                 except asyncio.CancelledError:
                     pass
                 except Exception as exc:
                     logger.exception(
-                        'Interactive analysis failed'
+                        'Background analysis failed'
                     )
-                    if generation == self.plot_generation:
+                    if (
+                        generation
+                        == self.plot_generation
+                    ):
                         self.query_one(
-                            '#info', Static
+                            '#info',
+                            Static,
                         ).update(
-                            f'Interactive analysis unavailable: {exc}'
+                            f'Analysis unavailable: {exc}'
                         )
 
-            self.analysis_task = asyncio.create_task(
-                compute()
+            self.analysis_task = (
+                asyncio.create_task(
+                    compute()
+                )
             )
             return
 
@@ -183,7 +361,9 @@ class PsyView(App):
                 )
             )
         except Exception as exc:
-            logger.exception('Cannot render selection')
+            logger.exception(
+                'Cannot render selection'
+            )
             self.spec = None
             self.query_one(
                 PlotextPlot
@@ -192,7 +372,8 @@ class PsyView(App):
                 PlotextPlot
             ).refresh()
             self.query_one(
-                '#info', Static
+                '#info',
+                Static,
             ).update(
                 f'Cannot display selection: {exc}'
             )
@@ -200,15 +381,31 @@ class PsyView(App):
     def display_spec(self, spec):
         self.spec = spec
         TerminalPlotRenderer().render(
-            self.query_one(PlotextPlot),
+            self.query_one(
+                PlotextPlot
+            ),
             spec,
         )
+
+        fit_text = spec.metadata.get(
+            '_fit_display',
+            '',
+        )
+        self.query_one(
+            '#fitinfo',
+            Static,
+        ).update(
+            fit_text
+        )
+
         info = ' | '.join(
             f'{k}: {v}'
             for k, v in spec.metadata.items()
+            if not str(k).startswith('_')
         )
         self.query_one(
-            '#info', Static
+            '#info',
+            Static,
         ).update(
             f'Current level: '
             f'{self.adapter.levels()[self.selection.active].name}\n'
@@ -217,58 +414,95 @@ class PsyView(App):
         )
 
     def show_analysis(self):
-        if not hasattr(self.adapter, 'interactive'):
-            self.query_one(
-                '#analysis', Static
-            ).update(
+        if not hasattr(
+            self.adapter,
+            'interactive',
+        ):
+            mode = (
                 'Analysis: STRUCTURAL / READ-ONLY — '
                 'no scientific interactive adapter identified'
             )
-            return
-
-        focus = (
-            ' [FOCUSED: ENTER switches mode; '
-            '←/→ change N; A/ESC returns]'
-            if self.analysis_focus
-            else ' [A: focus controls]'
-        )
-
-        if self.analysis.mode == 'archived':
-            mode = getattr(
-                self.adapter,
-                'archived_analysis_label',
-                'ARCHIVED DATA',
-            )
         else:
-            formatter = getattr(
-                self.adapter,
-                'interactive_analysis_label',
-                None,
+            focus = (
+                ' [FOCUSED: ENTER switches mode; '
+                '←/→ change N; A/ESC returns]'
+                if self.analysis_focus
+                else ' [A: focus controls]'
             )
+
+            if self.analysis.mode == 'archived':
+                analysis_label = getattr(
+                    self.adapter,
+                    'archived_analysis_label',
+                    'ARCHIVED DATA',
+                )
+            else:
+                formatter = getattr(
+                    self.adapter,
+                    'interactive_analysis_label',
+                    None,
+                )
+                analysis_label = (
+                    formatter(
+                        self.analysis.n_reversals
+                    )
+                    if formatter
+                    else (
+                        f'INTERACTIVE — final '
+                        f'{self.analysis.n_reversals} reversals'
+                    )
+                )
+
             mode = (
-                formatter(self.analysis.n_reversals)
-                if formatter
-                else (
-                    f'INTERACTIVE — final '
-                    f'{self.analysis.n_reversals} reversals'
+                'Analysis: '
+                + analysis_label
+                + focus
+            )
+
+        if self._fit_supported_here():
+            mode += (
+                ' | F: '
+                + (
+                    'HIDE DIAGNOSTIC FIT'
+                    if self.fit_enabled
+                    else 'FIT Eq. B.25'
                 )
             )
 
         self.query_one(
-            '#analysis', Static
+            '#analysis',
+            Static,
         ).update(
-            'Analysis: ' + mode + focus
+            mode
         )
 
     def action_analysis(self):
-        if not hasattr(self.adapter, 'interactive'):
+        if not hasattr(
+            self.adapter,
+            'interactive',
+        ):
             self.notify(
                 'Interactive analysis is not available '
                 'for this adapter.'
             )
             return
-        self.analysis_focus = not self.analysis_focus
+        self.analysis_focus = (
+            not self.analysis_focus
+        )
         self.show_analysis()
+
+    async def action_fit(self):
+        if not self._fit_supported_here():
+            self.notify(
+                'Diagnostic equation fitting is available '
+                'on the lateral Luminance/profile level.'
+            )
+            return
+
+        self.fit_enabled = (
+            not self.fit_enabled
+        )
+        await self.redraw()
 
     def action_hierarchy_focus(self):
         self.analysis_focus = False
@@ -279,14 +513,21 @@ class PsyView(App):
         delta=0,
         edge=None,
     ):
-        if self.analysis.mode != 'interactive':
+        if (
+            self.analysis.mode
+            != 'interactive'
+        ):
             self.notify(
                 'Press Enter to explicitly switch '
                 'to interactive analysis.'
             )
             return
 
-        maximum = self.adapter.interactive().max_n()
+        maximum = (
+            self.adapter
+            .interactive()
+            .max_n()
+        )
         n = (
             1
             if edge == 'first'
@@ -296,7 +537,8 @@ class PsyView(App):
                 maximum,
                 max(
                     1,
-                    self.analysis.n_reversals + delta,
+                    self.analysis.n_reversals
+                    + delta,
                 ),
             )
         )
@@ -345,7 +587,9 @@ class PsyView(App):
                 edge='first'
             )
             return
-        self.selection.move(edge='first')
+        self.selection.move(
+            edge='first'
+        )
         await self.redraw()
 
     async def action_last(self):
@@ -354,14 +598,19 @@ class PsyView(App):
                 edge='last'
             )
             return
-        self.selection.move(edge='last')
+        self.selection.move(
+            edge='last'
+        )
         await self.redraw()
 
     async def action_enter(self):
         if self.analysis_focus:
             mode = (
                 'interactive'
-                if self.analysis.mode == 'archived'
+                if (
+                    self.analysis.mode
+                    == 'archived'
+                )
                 else 'archived'
             )
             self.analysis = AnalysisState(
@@ -373,7 +622,9 @@ class PsyView(App):
 
         if (
             self.selection.active
-            == len(self.adapter.levels()) - 1
+            == len(
+                self.adapter.levels()
+            ) - 1
         ):
             self.action_matplotlib()
         else:
@@ -419,8 +670,12 @@ class PsyView(App):
             try:
                 destination = Path(
                     self.export_dir
-                    or Path.home() / 'psyview-exports'
+                    or (
+                        Path.home()
+                        / 'psyview-exports'
+                    )
                 ).resolve()
+
                 if destination.is_relative_to(
                     self.adapter.root
                 ):
@@ -447,7 +702,9 @@ class PsyView(App):
                     timeout=10,
                 )
             except Exception as exc:
-                logger.exception('Cannot save plot')
+                logger.exception(
+                    'Cannot save plot'
+                )
                 self.notify(
                     str(exc),
                     severity='error',
@@ -455,7 +712,9 @@ class PsyView(App):
 
     async def action_reload(self):
         try:
-            candidate = type(self.adapter)(
+            candidate = type(
+                self.adapter
+            )(
                 self.adapter.config
             )
             candidate.load(
@@ -471,14 +730,19 @@ class PsyView(App):
                     self.analysis.n_reversals,
                 )
             )
-            if self.analysis.mode == 'archived':
+            if (
+                self.analysis.mode
+                == 'archived'
+            ):
                 self.analysis = AnalysisState(
                     'archived',
                     default_n,
                 )
 
+            self.fit_enabled = False
             self.selection.refresh()
             await self.redraw()
+
         except (
             ValueError,
             OSError,
