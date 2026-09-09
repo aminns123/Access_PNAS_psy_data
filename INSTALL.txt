@@ -1,0 +1,28 @@
+PsyView boolean-column hotfix
+=============================
+
+REPLACE:
+    src/psyview/data/csv_adapter.py
+
+OPTIONAL NEW REGRESSION TEST:
+    tests/test_boolean_columns.py
+
+Why:
+The lateral archive has:
+    included_in_thesis_main_isf   -> boolean
+    included_staircases           -> integer count
+    excluded_staircases           -> integer count
+
+The previous generic CSV loader treated every column beginning "included_"
+as a boolean flag, so it rejected included_staircases.
+
+This replacement converts only columns that both:
+1) have a boolean-looking name, AND
+2) actually contain True/False values.
+
+Numeric count columns remain numeric.
+
+After copying, run the normal launcher:
+    .\run_psyview.bat
+
+No pyproject.toml change and no reinstall should be required.
