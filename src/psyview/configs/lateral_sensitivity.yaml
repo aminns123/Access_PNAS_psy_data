@@ -1,0 +1,20 @@
+dataset:
+  name: Lateral Sensitivity / ISF
+  adapter: lateral
+  title: Lateral Sensitivity and Intrinsic Spatial Frequency
+  citation: 'Read-only empirical archive; scientific definitions are taken from the repository data dictionary and methods documentation.'
+sources:
+  conditions: data/processed/condition_summary.csv
+  endpoints: data/processed/isf_endpoints.csv
+  profiles: data/processed/lateral_profiles_recomputed.csv
+  stairs: data/processed/staircase_thresholds.csv
+  summary: data/processed/staircase_summary.csv
+  trials: data/processed/staircase_trials.csv.gz
+  reversals: data/processed/staircase_reversals.csv
+hierarchy:
+  - {name: Subject, column: participant_id, source: conditions}
+  - {name: Luminance, column: luminance_label_cd_m2, source: conditions, units: 'cd/m²'}
+  - {name: Position, column: probe_position_deg, source: stairs, units: 'deg'}
+  - {name: Experiment, column: experiment, source: stairs}
+  - {name: Staircase, column: staircase_id, source: stairs}
+plots: {}

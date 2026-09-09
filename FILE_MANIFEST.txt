@@ -1,0 +1,16 @@
+INSTALL_INSTRUCTIONS.txt	4132 bytes
+configs/lateral_sensitivity.yaml	999 bytes
+src/psyview/__main__.py	4531 bytes
+src/psyview/analysis/lateral_interactive.py	12968 bytes
+src/psyview/app.py	15255 bytes
+src/psyview/configs/lateral_sensitivity.yaml	999 bytes
+src/psyview/data/config.py	1837 bytes
+src/psyview/data/detector.py	2177 bytes
+src/psyview/data/inspector.py	10726 bytes
+src/psyview/data/lateral_sensitivity.py	6768 bytes
+src/psyview/data/pnas_psychophysics.py	4095 bytes
+src/psyview/data/registry.py	7678 bytes
+src/psyview/plotting/lateral_plots.py	9579 bytes
+src/psyview/ui/help_screen.py	1439 bytes
+tests/test_inference.py	1539 bytes
+tests/test_lateral.py	8516 bytes
