@@ -1,11 +1,17 @@
 from .csv_adapter import CSVAdapter
 from .base import DatasetError
-from ..plotting.pnas_plots import subject_plot, csf_plot, staircase_plot
+from ..plotting.pnas_plots import (
+    subject_plot,
+    csf_plot,
+    staircase_plot,
+)
 
 
 class PNASAdapter(CSVAdapter):
     default_n_reversals = 8
-    archived_analysis_label = 'ARCHIVED PNAS — median of final 8 reversals'
+    archived_analysis_label = (
+        'ARCHIVED PNAS — median of final 8 reversals'
+    )
 
     def interactive_analysis_label(self, n):
         return f'INTERACTIVE — median of final {n} reversals'
@@ -22,6 +28,7 @@ class PNASAdapter(CSVAdapter):
             raise DatasetError(
                 'Duplicate condition_id in preferred-frequency table.'
             )
+
         joined = stairs.merge(
             conditions,
             on=['condition_id', 'participant_id'],
@@ -30,20 +37,36 @@ class PNASAdapter(CSVAdapter):
         )
         if joined.luminance_cd_m2.isna().any():
             raise DatasetError(
-                'Staircase condition has no matching participant/luminance '
-                'in preferred-frequency table.'
+                'Staircase condition has no matching '
+                'participant/luminance in preferred-frequency table.'
             )
+
         self.tables['stairs'] = joined
         self.filtered.clear()
         self._interactive = None
         self.analysis_source_stamp = tuple(
             (
                 source,
-                (self.root / self.config['sources'][source]).stat().st_mtime_ns,
-                (self.root / self.config['sources'][source]).stat().st_size,
+                (
+                    self.root
+                    / self.config['sources'][source]
+                ).stat().st_mtime_ns,
+                (
+                    self.root
+                    / self.config['sources'][source]
+                ).stat().st_size,
             )
-            for source in ('psf', 'csf', 'stairs', 'trials', 'reversals')
-            if (self.root / self.config['sources'][source]).exists()
+            for source in (
+                'psf',
+                'csf',
+                'stairs',
+                'trials',
+                'reversals',
+            )
+            if (
+                self.root
+                / self.config['sources'][source]
+            ).exists()
         )
 
     def interactive(self):
@@ -52,40 +75,85 @@ class PNASAdapter(CSVAdapter):
             self._interactive = InteractiveAnalysis(self)
         return self._interactive
 
-    def get_plot(self, level, current_filters, analysis=None):
-        if analysis is not None and analysis.mode == 'interactive':
+    def get_plot(
+        self,
+        level,
+        current_filters,
+        analysis=None,
+    ):
+        if (
+            analysis is not None
+            and analysis.mode == 'interactive'
+        ):
             engine = self.interactive()
             with engine.lock:
                 return engine.plot(
-                    level, current_filters, analysis.n_reversals
+                    level,
+                    current_filters,
+                    analysis.n_reversals,
                 )
-        spec = self.archived_plot(level, current_filters)
-        spec.title = 'ARCHIVED PNAS | ' + spec.title
-        spec.metadata['Analysis'] = 'ARCHIVED PNAS'
+
+        spec = self.archived_plot(
+            level,
+            current_filters,
+        )
+        spec.title = (
+            'ARCHIVED PNAS | '
+            + spec.title
+        )
+        spec.metadata[
+            'Analysis'
+        ] = 'ARCHIVED PNAS'
         return spec
 
-    def archived_plot(self, level, current_filters):
+    def archived_plot(
+        self,
+        level,
+        current_filters,
+    ):
         if level == 0:
             return subject_plot(
-                self.select('psf', current_filters),
+                self.select(
+                    'psf',
+                    current_filters,
+                ),
                 current_filters,
             )
 
         if level >= 2:
-            stairs = self.select('stairs', current_filters)
-            trials = self.select('trials', current_filters)
-            ids = tuple(stairs.staircase_id)
-            key = ('reversals_by_staircase', ids)
+            stairs = self.select(
+                'stairs',
+                current_filters,
+            )
+            trials = self.select(
+                'trials',
+                current_filters,
+            )
+            ids = tuple(
+                stairs.staircase_id
+            )
+            key = (
+                'reversals_by_staircase',
+                ids,
+            )
             if key not in self.filtered:
-                self.filtered[key] = self.table('reversals').loc[
-                    lambda frame: frame.staircase_id.isin(ids)
-                ]
+                self.filtered[key] = (
+                    self.table('reversals').loc[
+                        lambda frame:
+                            frame.staircase_id.isin(ids)
+                    ]
+                )
+
             csf_filters = {
                 key: value
                 for key, value in current_filters.items()
                 if key != 'staircase_id'
             }
-            csf = self.select('csf', csf_filters)
+            csf = self.select(
+                'csf',
+                csf_filters,
+            )
+
             return staircase_plot(
                 stairs,
                 trials,
@@ -94,20 +162,51 @@ class PNASAdapter(CSVAdapter):
                 csf,
             )
 
-        psf = self.select('psf', current_filters).iloc[0]
-        csf = self.select('csf', current_filters)
+        psf = self.select(
+            'psf',
+            current_filters,
+        ).iloc[0]
+        csf = self.select(
+            'csf',
+            current_filters,
+        )
+
+        staircase_filters = {
+            key: value
+            for key, value in current_filters.items()
+            if key in (
+                'participant_id',
+                'luminance_cd_m2',
+            )
+        }
+        stairs = self.select(
+            'stairs',
+            staircase_filters,
+        )
+
         try:
             curves = self.select(
                 'curves',
-                {'condition_id': psf.condition_id},
+                {
+                    'condition_id':
+                        psf.condition_id
+                },
             )
             note = (
-                'Curve: archived output recomputed with supplied current helper; '
-                'not a historical saved fit.'
+                'Curve: archived output recomputed with supplied '
+                'current helper; not a historical saved fit.'
             )
         except DatasetError as exc:
             curves = None
-            note = f'Curve unavailable: {exc}'
+            note = (
+                f'Curve unavailable: {exc}'
+            )
+
         return csf_plot(
-            csf, psf, current_filters, curves, note
+            csf,
+            psf,
+            current_filters,
+            curves,
+            note,
+            stairs=stairs,
         )

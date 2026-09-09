@@ -1,28 +1,54 @@
-PsyView boolean-column hotfix
-=============================
+PsyView CSF error-bar patch
+===========================
 
+PURPOSE
+-------
+Add descriptive error bars to archived CSF points using the list of included
+individual staircase thresholds at each spatial frequency.
+
+SCIENTIFIC DEFINITION
+---------------------
+The archived CSF point is unchanged:
+
+    mean_threshold = arithmetic mean of included staircase thresholds
+    sensitivity = 1 / mean_threshold
+
+The new bar is descriptive across-staircase variability:
+
+    sd_threshold = sample SD of included staircase thresholds (ddof=1)
+
+    lower sensitivity = 1 / (mean_threshold + sd_threshold)
+    upper sensitivity = 1 / (mean_threshold - sd_threshold)
+
+This keeps the archived CSF point exactly unchanged and propagates the
+threshold variability through the same reciprocal sensitivity definition.
+The bars are explicitly labelled as descriptive across-staircase variability,
+NOT confidence intervals.
+
+Only primary-included staircases contribute. Frequency points excluded from the
+CSF fit still retain their measurement/error bar because the exclusion concerns
+the fit, not the underlying staircase-derived observation.
+
+COPY / REPLACE
+--------------
 REPLACE:
-    src/psyview/data/csv_adapter.py
+    src/psyview/plotting/pnas_plots.py
+    src/psyview/data/pnas_psychophysics.py
 
-OPTIONAL NEW REGRESSION TEST:
-    tests/test_boolean_columns.py
+OPTIONAL NEW TEST:
+    tests/test_csf_errorbars.py
 
-Why:
-The lateral archive has:
-    included_in_thesis_main_isf   -> boolean
-    included_staircases           -> integer count
-    excluded_staircases           -> integer count
+No pyproject.toml change is needed.
 
-The previous generic CSV loader treated every column beginning "included_"
-as a boolean flag, so it rejected included_staircases.
+TEST
+----
+Launch normally:
 
-This replacement converts only columns that both:
-1) have a boolean-looking name, AND
-2) actually contain True/False values.
-
-Numeric count columns remain numeric.
-
-After copying, run the normal launcher:
     .\run_psyview.bat
 
-No pyproject.toml change and no reinstall should be required.
+Open the CSF/PSF dataset and go:
+    Subject -> Luminance
+
+The CSF points should now have vertical error bars.
+
+The existing lateral-sensitivity error bars are untouched.
