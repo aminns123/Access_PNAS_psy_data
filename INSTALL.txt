@@ -1,98 +1,106 @@
-PsyView on-demand lateral Eq. B.25 fit + box-shaped TUI plot
-============================================================
-
-NEW:
-    src/psyview/analysis/lateral_fit.py
-    tests/test_lateral_fit.py       (optional regression test)
+PsyView lateral legend + point exclusions + 200-cd/m² fix
+=========================================================
 
 REPLACE:
+    src/psyview/plotting/terminal.py
+    src/psyview/analysis/lateral_fit.py
     src/psyview/data/lateral_sensitivity.py
     src/psyview/app.py
     src/psyview/ui/help_screen.py
 
-DO NOT replace:
-    src/psyview/plotting/terminal.py
+OPTIONAL NEW TEST:
+    tests/test_lateral_profile_candidates.py
 
-Keep your latest terminal.py from the previous centred/heavy error-bar patch.
+1. RIGHT-HAND TUI LEGEND
+------------------------
+The Plotext legend is removed from inside the graph and displayed in a
+separate key panel immediately to the right.
 
-WHAT YOU GET
-------------
-At the lateral dataset:
+It is formatted as two visual columns:
+    symbol   series name
 
-    Subject
-      -> Luminance
+Example:
+    ●   Lateral sensitivity
+    ┃   spread / 2
+    ━━  Diagnostic Eq. B.25 fit
+    ×   Excluded from diagnostic fit
 
-press:
+Matplotlib is unchanged.
 
-    F
+2. 200-cd/m² LATERAL PROFILE FIX
+--------------------------------
+The earlier adapter made a wrong global assumption:
 
-PsyView computes a NEW diagnostic fit of thesis Eq. B.25 to the currently
-displayed lateral-sensitivity profile:
+    if storage_script_active_exclusions exists anywhere:
+        keep only that candidate everywhere
 
-    R(X) = A exp(-lambda |X|)
-           [cos(kX + phi) - sign(X) sin(kX + phi)]
+That silently removed valid conditions whose selected archived exclusion
+candidate has a different name.
 
-where:
-    X = distance from flanker edge (deg)
-    f_n = k / (2*pi)
+The public archive actually contains:
+    P01 L010-L050  -> storage_script_active_exclusions
+    P01 L200       -> recorded_exclusion_list
+    P02-P04        -> no_exclusions
 
-The fit uses:
-    sigma_i = max(full recorded spread_i, 0.05)
+Each condition has exactly ONE selected profile candidate already.
 
-This follows the weighting convention documented by the lateral archive.
-It does NOT use spread/2 as fitting sigma; spread/2 remains the display-bar
-convention.
+The new adapter therefore:
+    - keeps every condition's deposited candidate
+    - validates exactly one candidate per condition
+    - validates profile row counts against condition_summary.profile_positions
 
-Press F again to hide the fit.
+This restores P01 200 cd/m² and prevents the same class of silent omission.
 
-The fit line and parameter block are part of the same PlotSpec, so pressing M
-shows the SAME selected diagnostic fit in Matplotlib.
+3. MANUAL POINT EXCLUSION FROM DIAGNOSTIC FIT
+---------------------------------------------
+At lateral Subject -> Luminance:
 
-ARCHIVED / INTERACTIVE DISTINCTION
-----------------------------------
-Archived mode:
-    F fits the archived deterministic lateral profile.
+    F       enable fit
+    E       enter point-edit mode
+    <- / -> move the diamond cursor
+    Enter   exclude/re-include that point
+    C       clear exclusions
+    E       leave point-edit mode
 
-Interactive N mode:
-    PsyView first recomputes the selected final-N profile and then F fits that
-    current profile.
+Excluded data remain visible and are marked red ×.
+They are removed ONLY from the diagnostic fit calculation.
+Nothing is written to the empirical repository.
 
-The fit is always labelled:
-    INTERACTIVE / DIAGNOSTIC FIT
+Exclusions are session-only and tracked separately per condition.
 
-It is NOT called an archived historical fit and does not replace archived ISF
-endpoints, because the historical fit-row/input mapping remains unresolved.
+4. WHAT FIT IS BEING DONE?
+--------------------------
+The current diagnostic fit is NOT an unweighted ordinary curve fit.
 
-TUI SHAPE
----------
-The terminal plot is now centred in a smaller, box-like panel:
-    width 72 terminal cells
-    height 29 terminal rows
+It uses:
+    sigma_i = max(full spread_i, 0.05)
 
-This is intended to look closer to the near-square plotting boxes used in the
-paper while leaving room underneath for the fitted equation and parameters.
-Compact terminals automatically fall back to a full-width shorter plot.
+and minimizes:
+    sum [ (model_i - data_i) / sigma_i ]^2
 
-NO DEPENDENCY CHANGE
---------------------
-SciPy is already in pyproject.toml, so no reinstall or pyproject edit is needed.
+This is error-weighted nonlinear least squares.
+
+For independent Gaussian observations with fixed sigma_i, minimizing that
+quantity is mathematically equivalent to maximizing the Gaussian likelihood,
+because the log(sigma_i) terms do not depend on the model parameters.
+
+So the best description is:
+    "error-weighted nonlinear least squares (Gaussian MLE-equivalent for
+     fixed supplied sigma)"
+
+It is still intentionally described as a NEW DIAGNOSTIC FIT rather than the
+historical archived fit, because the historical fit/input linkage and exact
+old fitting sequence are not fully certified.
 
 RUN
 ---
     .\run_psyview.bat
 
-Then:
-    Lateral dataset
-      -> Subject
-      -> Luminance
-      -> F
+Check P01:
+    Subject P01 -> Luminance
+You should now see:
+    10, 20, 25, 50, 200
 
-Expected:
-    points + error bars + yellow smooth fit
-    equation and parameters below the TUI plot
+At 200, a real lateral profile should render.
 
-Useful:
-    M  same fitted PlotSpec in Matplotlib
-    F  hide fit
-    left/right  change luminance while fit remains enabled
-    A + Enter  switch archived/interactive; fit follows current profile
+Then press F and E to test manual fit-point exclusions.

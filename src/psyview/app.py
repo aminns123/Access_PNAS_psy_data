@@ -6,12 +6,16 @@ from textual_plotext import PlotextPlot
 from .state import SelectionState, AnalysisState
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import math
+import textwrap
+
 from .ui.hierarchy import Hierarchy
 from .ui.help_screen import HelpScreen
 from .plotting.terminal import (
     TerminalPlotRenderer,
     ScientificPlot,
 )
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,13 +32,22 @@ class PsyView(App):
     .active { border: dashed #6de5f2; color: #ffffff; }
 
     #plotbox {
+        width: 110;
         height: 30;
         align-horizontal: center;
     }
     #plot {
-        width: 72;
+        width: 74;
         height: 29;
         min-height: 18;
+    }
+    #legend {
+        width: 34;
+        height: 29;
+        padding: 1 1;
+        border-left: solid #33465c;
+        color: #b8c7d8;
+        overflow-y: auto;
     }
 
     #fitinfo {
@@ -58,7 +71,7 @@ class PsyView(App):
         background: #000000 70%;
     }
     #help {
-        width: 72;
+        width: 76;
         height: auto;
         padding: 2;
         border: round #6de5f2;
@@ -68,8 +81,9 @@ class PsyView(App):
     Screen.compact #heading { height: 2; }
     Screen.compact .choice-row { height: 2; }
     Screen.compact .choice { height: 1; border: none; }
-    Screen.compact #plotbox { height: 19; }
-    Screen.compact #plot { width: 100%; height: 18; }
+    Screen.compact #plotbox { width: 100%; height: 19; }
+    Screen.compact #plot { width: 70%; height: 18; }
+    Screen.compact #legend { width: 30%; height: 18; padding: 0 1; }
     Screen.compact #fitinfo { max-height: 3; }
     Screen.compact #info { max-height: 2; }
     '''
@@ -86,11 +100,11 @@ class PsyView(App):
         ('m', 'matplotlib', 'Matplotlib'),
         ('s', 'save', 'Save PNG'),
         ('f', 'fit', 'Fit'),
+        ('e', 'fit_edit', 'Fit points'),
+        ('c', 'clear_fit', 'Clear fit exclusions'),
         ('h', 'help', 'Help'),
         ('question_mark', 'help', 'Help'),
         ('q', 'quit', 'Quit'),
-    ]
-    BINDINGS += [
         ('a', 'analysis', 'Analysis'),
         ('escape', 'hierarchy_focus', 'Hierarchy'),
     ]
@@ -115,7 +129,10 @@ class PsyView(App):
             default_n,
         )
         self.analysis_focus = False
+
         self.fit_enabled = False
+        self.fit_edit_mode = False
+        self.fit_cursor_index = 0
 
         self.analysis_executor = ThreadPoolExecutor(
             max_workers=1,
@@ -126,6 +143,7 @@ class PsyView(App):
 
     def compose(self) -> ComposeResult:
         dataset = self.adapter.config['dataset']
+
         yield Static(
             f"{dataset.get('title', self.adapter.name)}\n"
             f"Data Explorer • Dataset: {self.adapter.name}\n"
@@ -138,8 +156,14 @@ class PsyView(App):
             id='analysis',
             markup=False,
         )
+
         with Horizontal(id='plotbox'):
             yield ScientificPlot(id='plot')
+            yield Static(
+                id='legend',
+                markup=False,
+            )
+
         yield Static(
             id='fitinfo',
             markup=False,
@@ -171,6 +195,7 @@ class PsyView(App):
         from .plotting.matplotlib_plots import (
             LOG_PATH,
         )
+
         for process in self.figure_processes[:]:
             code = process.poll()
             if code is not None:
@@ -199,6 +224,44 @@ class PsyView(App):
             )
         )
 
+    def _analysis_for_adapter(self):
+        if self.analysis.mode == 'interactive':
+            return self.analysis
+        return None
+
+    def _fit_points(self):
+        getter = getattr(
+            self.adapter,
+            'fit_points',
+            None,
+        )
+        if (
+            getter is None
+            or not self._fit_supported_here()
+        ):
+            return []
+
+        return getter(
+            self.selection.filters(),
+            self._analysis_for_adapter(),
+        )
+
+    def _fit_cursor_x(self):
+        points = self._fit_points()
+        if not points:
+            return None
+
+        self.fit_cursor_index = min(
+            max(
+                0,
+                self.fit_cursor_index,
+            ),
+            len(points) - 1,
+        )
+        return points[
+            self.fit_cursor_index
+        ]
+
     @staticmethod
     def _prepare_plot(
         adapter,
@@ -206,6 +269,8 @@ class PsyView(App):
         filters,
         analysis,
         use_fit,
+        fit_cursor_x,
+        fit_edit_mode,
     ):
         if (
             use_fit
@@ -218,6 +283,8 @@ class PsyView(App):
                 level,
                 filters,
                 analysis,
+                fit_cursor_x,
+                fit_edit_mode,
             )
 
         if (
@@ -247,11 +314,19 @@ class PsyView(App):
             '#fitinfo',
             Static,
         ).update('')
+        self.query_one(
+            '#legend',
+            Static,
+        ).update('')
 
         use_fit = (
             self.fit_enabled
             and self._fit_supported_here()
         )
+
+        if not self._fit_supported_here():
+            self.fit_edit_mode = False
+
         background_work = (
             self.analysis.mode == 'interactive'
             or use_fit
@@ -266,6 +341,7 @@ class PsyView(App):
             ).refresh()
 
         self.show_analysis()
+
         await self.query_one(
             Hierarchy
         ).show_state(
@@ -281,6 +357,14 @@ class PsyView(App):
                 if self.analysis.mode == 'interactive'
                 else None
             )
+            cursor_x = (
+                self._fit_cursor_x()
+                if (
+                    use_fit
+                    and self.fit_edit_mode
+                )
+                else None
+            )
 
             self.query_one(
                 PlotextPlot
@@ -289,7 +373,16 @@ class PsyView(App):
                 PlotextPlot
             ).refresh()
 
-            if use_fit:
+            if (
+                use_fit
+                and self.fit_edit_mode
+                and cursor_x is not None
+            ):
+                message = (
+                    f'Fit-point edit: cursor at X={cursor_x:g}°. '
+                    '←/→ move, Enter include/exclude.'
+                )
+            elif use_fit:
                 message = (
                     'Fitting thesis Eq. B.25 to the '
                     'current lateral-sensitivity profile…'
@@ -320,6 +413,8 @@ class PsyView(App):
                             filters,
                             analysis,
                             use_fit,
+                            cursor_x,
+                            self.fit_edit_mode,
                         )
                     )
                     if (
@@ -378,13 +473,108 @@ class PsyView(App):
                 f'Cannot display selection: {exc}'
             )
 
+    @staticmethod
+    def _legend_symbol(series):
+        if series.kind == 'scatter':
+            return (
+                series.marker
+                if series.marker
+                else '●'
+            )
+
+        if series.kind == 'vline':
+            return '┃'
+
+        if series.kind == 'hline':
+            return '━━'
+
+        if (
+            series.kind == 'line'
+            and len(series.x) == 2
+            and len(series.y) == 2
+            and all(
+                value is not None
+                and math.isfinite(float(value))
+                for value in series.x
+            )
+            and math.isclose(
+                float(series.x[0]),
+                float(series.x[1]),
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+        ):
+            return '┃'
+
+        return '━━'
+
+    def _legend_text(self, spec):
+        entries = []
+        seen = set()
+
+        for series in spec.series:
+            label = (
+                str(series.label).strip()
+                if series.label
+                else ''
+            )
+            if (
+                not label
+                or label in seen
+            ):
+                continue
+
+            seen.add(label)
+            entries.append(
+                (
+                    self._legend_symbol(
+                        series
+                    ),
+                    label,
+                )
+            )
+
+        if not entries:
+            return 'KEY\n\n(no labelled series)'
+
+        lines = ['KEY', '']
+        wrap_width = 27
+
+        for symbol, label in entries:
+            wrapped = textwrap.wrap(
+                label,
+                width=wrap_width,
+            ) or ['']
+
+            lines.append(
+                f'{symbol:<3}{wrapped[0]}'
+            )
+            for continuation in wrapped[1:]:
+                lines.append(
+                    f'   {continuation}'
+                )
+            lines.append('')
+
+        return '\n'.join(lines).rstrip()
+
     def display_spec(self, spec):
         self.spec = spec
+
         TerminalPlotRenderer().render(
             self.query_one(
                 PlotextPlot
             ),
             spec,
+            show_labels=False,
+        )
+
+        self.query_one(
+            '#legend',
+            Static,
+        ).update(
+            self._legend_text(
+                spec
+            )
         )
 
         fit_text = spec.metadata.get(
@@ -403,6 +593,7 @@ class PsyView(App):
             for k, v in spec.metadata.items()
             if not str(k).startswith('_')
         )
+
         self.query_one(
             '#info',
             Static,
@@ -463,11 +654,22 @@ class PsyView(App):
             mode += (
                 ' | F: '
                 + (
-                    'HIDE DIAGNOSTIC FIT'
+                    'HIDE FIT'
                     if self.fit_enabled
                     else 'FIT Eq. B.25'
                 )
             )
+
+            if self.fit_enabled:
+                mode += (
+                    ' | E: '
+                    + (
+                        'EXIT POINT EDIT'
+                        if self.fit_edit_mode
+                        else 'EDIT FIT POINTS'
+                    )
+                    + ' | C: CLEAR EXCLUSIONS'
+                )
 
         self.query_one(
             '#analysis',
@@ -486,6 +688,8 @@ class PsyView(App):
                 'for this adapter.'
             )
             return
+
+        self.fit_edit_mode = False
         self.analysis_focus = (
             not self.analysis_focus
         )
@@ -502,10 +706,58 @@ class PsyView(App):
         self.fit_enabled = (
             not self.fit_enabled
         )
+
+        if not self.fit_enabled:
+            self.fit_edit_mode = False
+
         await self.redraw()
+
+    async def action_fit_edit(self):
+        if (
+            not self.fit_enabled
+            or not self._fit_supported_here()
+        ):
+            self.notify(
+                'Enable the lateral diagnostic fit with F first.'
+            )
+            return
+
+        self.analysis_focus = False
+        self.fit_edit_mode = (
+            not self.fit_edit_mode
+        )
+
+        if self.fit_edit_mode:
+            self.fit_cursor_index = 0
+
+        await self.redraw()
+
+    async def action_clear_fit(self):
+        if (
+            not self.fit_enabled
+            or not self._fit_supported_here()
+        ):
+            self.notify(
+                'No active lateral diagnostic fit to clear.'
+            )
+            return
+
+        clearer = getattr(
+            self.adapter,
+            'clear_fit_exclusions',
+            None,
+        )
+
+        if clearer is not None:
+            clearer(
+                self.selection.filters()
+            )
+            self.fit_cursor_index = 0
+            await self.redraw()
 
     def action_hierarchy_focus(self):
         self.analysis_focus = False
+        self.fit_edit_mode = False
         self.show_analysis()
 
     async def change_n(
@@ -528,6 +780,7 @@ class PsyView(App):
             .interactive()
             .max_n()
         )
+
         n = (
             1
             if edge == 'first'
@@ -542,75 +795,148 @@ class PsyView(App):
                 ),
             )
         )
+
         self.analysis = AnalysisState(
             'interactive',
             n,
         )
+
         await self.redraw()
 
     def on_unmount(self):
         self.plot_generation += 1
+
         if self.analysis_task:
             self.analysis_task.cancel()
+
         self.analysis_executor.shutdown(
             wait=False,
             cancel_futures=True,
         )
 
     async def action_previous(self):
+        if self.fit_edit_mode:
+            points = self._fit_points()
+            if points:
+                self.fit_cursor_index = (
+                    self.fit_cursor_index - 1
+                ) % len(points)
+                await self.redraw()
+            return
+
         if self.analysis_focus:
             await self.change_n(-1)
             return
+
         self.selection.move(-1)
+        self.fit_cursor_index = 0
         await self.redraw()
 
     async def action_next(self):
+        if self.fit_edit_mode:
+            points = self._fit_points()
+            if points:
+                self.fit_cursor_index = (
+                    self.fit_cursor_index + 1
+                ) % len(points)
+                await self.redraw()
+            return
+
         if self.analysis_focus:
             await self.change_n(1)
             return
+
         self.selection.move(1)
+        self.fit_cursor_index = 0
         await self.redraw()
 
     async def action_child(self):
         self.analysis_focus = False
+        self.fit_edit_mode = False
         self.selection.down()
         await self.redraw()
 
     async def action_parent(self):
         self.analysis_focus = False
+        self.fit_edit_mode = False
         self.selection.up()
         await self.redraw()
 
     async def action_first(self):
+        if self.fit_edit_mode:
+            self.fit_cursor_index = 0
+            await self.redraw()
+            return
+
         if self.analysis_focus:
             await self.change_n(
                 edge='first'
             )
             return
+
         self.selection.move(
             edge='first'
         )
+        self.fit_cursor_index = 0
         await self.redraw()
 
     async def action_last(self):
+        if self.fit_edit_mode:
+            points = self._fit_points()
+            if points:
+                self.fit_cursor_index = (
+                    len(points) - 1
+                )
+                await self.redraw()
+            return
+
         if self.analysis_focus:
             await self.change_n(
                 edge='last'
             )
             return
+
         self.selection.move(
             edge='last'
         )
+        self.fit_cursor_index = 0
         await self.redraw()
 
     async def action_enter(self):
+        if self.fit_edit_mode:
+            x_value = self._fit_cursor_x()
+            toggler = getattr(
+                self.adapter,
+                'toggle_fit_exclusion',
+                None,
+            )
+
+            if (
+                x_value is not None
+                and toggler is not None
+            ):
+                excluded = toggler(
+                    self.selection.filters(),
+                    x_value,
+                )
+
+                self.notify(
+                    (
+                        'Excluded'
+                        if excluded
+                        else 'Re-included'
+                    )
+                    + f' X={x_value:g}° '
+                    + 'for this diagnostic fit.'
+                )
+
+                await self.redraw()
+            return
+
         if self.analysis_focus:
             mode = (
                 'interactive'
-                if (
-                    self.analysis.mode
-                    == 'archived'
-                )
+                if self.analysis.mode == 'archived'
                 else 'archived'
             )
             self.analysis = AnalysisState(
@@ -635,6 +961,7 @@ class PsyView(App):
             from .plotting.matplotlib_plots import (
                 MatplotlibPlotRenderer,
             )
+
             try:
                 self.figure_processes.append(
                     MatplotlibPlotRenderer().open(
@@ -689,18 +1016,22 @@ class PsyView(App):
                     parents=True,
                     exist_ok=True,
                 )
+
                 path = destination / (
                     f"psyview-"
                     f"{datetime.now():%Y%m%d-%H%M%S-%f}.png"
                 )
+
                 MatplotlibPlotRenderer().save(
                     self.spec,
                     path,
                 )
+
                 self.notify(
                     f'Saved {path}',
                     timeout=10,
                 )
+
             except Exception as exc:
                 logger.exception(
                     'Cannot save plot'
@@ -720,6 +1051,7 @@ class PsyView(App):
             candidate.load(
                 self.adapter.root
             )
+
             self.adapter = candidate
             self.selection.adapter = candidate
 
@@ -730,6 +1062,7 @@ class PsyView(App):
                     self.analysis.n_reversals,
                 )
             )
+
             if (
                 self.analysis.mode
                 == 'archived'
@@ -740,6 +1073,9 @@ class PsyView(App):
                 )
 
             self.fit_enabled = False
+            self.fit_edit_mode = False
+            self.fit_cursor_index = 0
+
             self.selection.refresh()
             await self.redraw()
 

@@ -19,7 +19,6 @@ class ScientificPlot(PlotextPlot):
 
 
 def _is_vertical_interval(series):
-    """Identify a finite two-point vertical interval/error-bar series."""
     if series.kind != 'line' or len(series.x) != 2 or len(series.y) != 2:
         return False
     if not all(finite(v) for v in (*series.x, *series.y)):
@@ -33,11 +32,6 @@ def _is_vertical_interval(series):
 
 
 def _interval_samples(y0, y1, scale, count=25):
-    """Sample an interval uniformly in terminal display coordinates.
-
-    On log axes, geometric sampling gives an approximately uniform visual
-    vertical stroke. On linear axes, ordinary linear interpolation is used.
-    """
     y0 = float(y0)
     y1 = float(y1)
     lo, hi = sorted((y0, y1))
@@ -62,7 +56,7 @@ def _interval_samples(y0, y1, scale, count=25):
 
 
 class TerminalPlotRenderer:
-    def render(self, widget, spec):
+    def render(self, widget, spec, *, show_labels=True):
         plt = widget.plt
         plt.clear_figure()
         plt.theme('textual-design-dark')
@@ -84,9 +78,6 @@ class TerminalPlotRenderer:
                 )
             )
 
-            # Plotext 5.3 transforms data and ticks, but expects limits in
-            # display coordinates. This backend-only conversion leaves raw
-            # scientific data unchanged.
             bounds = (
                 [math.log10(v) for v in limits]
                 if scale == 'log'
@@ -100,15 +91,10 @@ class TerminalPlotRenderer:
                     ticks,
                     [tick_label(v) for v in ticks],
                 )
-            elif (
-                axis == 'x'
-                and spec.xlabel.startswith('Trial')
-            ):
+            elif axis == 'x' and spec.xlabel.startswith('Trial'):
                 step = max(
                     1,
-                    math.ceil(
-                        (limits[1] - limits[0]) / 6
-                    ),
+                    math.ceil((limits[1] - limits[0]) / 6),
                 )
                 ticks = list(
                     range(
@@ -117,13 +103,14 @@ class TerminalPlotRenderer:
                         step,
                     )
                 )
-                plt.xticks(
-                    ticks,
-                    [str(v) for v in ticks],
-                )
+                plt.xticks(ticks, [str(v) for v in ticks])
 
-        # Draw lines/intervals first and measurements last so points remain
-        # visible on top of uncertainty bars and trajectories.
+        def label_for(series):
+            if show_labels and series.label:
+                return series.label
+            return None
+
+        # Measurements remain visible over uncertainty/trajectory lines.
         for series in sorted(
             spec.series,
             key=lambda s: s.kind == 'scatter',
@@ -144,11 +131,7 @@ class TerminalPlotRenderer:
                     )
                 continue
 
-            # Plotext's braille line rasterisation can put a two-point vertical
-            # segment one sub-cell away from a scatter marker. For uncertainty
-            # intervals, render a stack of heavy vertical glyphs at the exact
-            # same x coordinate instead. The measurement scatter is drawn later,
-            # so it remains centred on top of the bar.
+            # Heavy, exactly-centred terminal uncertainty intervals.
             if _is_vertical_interval(series):
                 x_value = float(series.x[0])
                 y_values = _interval_samples(
@@ -161,18 +144,13 @@ class TerminalPlotRenderer:
                 plt.scatter(
                     x_values,
                     y_values,
-                    label=series.label or None,
+                    label=label_for(series),
                     color=series.color,
                     marker='┃',
                 )
 
-                # Heavy endpoint caps make the interval easier to distinguish
-                # from trajectories without altering the scientific values.
                 lo, hi = sorted(
-                    (
-                        float(series.y[0]),
-                        float(series.y[1]),
-                    )
+                    (float(series.y[0]), float(series.y[1]))
                 )
                 plt.scatter(
                     [x_value, x_value],
@@ -185,17 +163,11 @@ class TerminalPlotRenderer:
             if series.x:
                 points = [
                     (x, y)
-                    for x, y in zip(
-                        series.x,
-                        series.y,
-                    )
+                    for x, y in zip(series.x, series.y)
                     if finite(x) and finite(y)
                 ]
                 if points:
-                    x, y = map(
-                        list,
-                        zip(*points),
-                    )
+                    x, y = map(list, zip(*points))
                     function = (
                         plt.scatter
                         if series.kind == 'scatter'
@@ -204,7 +176,7 @@ class TerminalPlotRenderer:
                     function(
                         x,
                         y,
-                        label=series.label or None,
+                        label=label_for(series),
                         color=series.color,
                         marker=(
                             series.marker
