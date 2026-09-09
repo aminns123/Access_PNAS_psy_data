@@ -1,4 +1,0 @@
-figure,panels,status,files,limitation
-2,D1-D12 CSF observations,archived data and current-helper interpolation deposited,data/processed/figure_source_data/figure2_csf_points.csv; data/processed/figure_source_data/figure2_csf_curves_recomputed.csv,exact PDF curve identity not certified
-2,D summary psychophysical points,saved distributions and numerical summaries deposited,data/processed/figure_source_data/figure2_psf_points.csv,source selection traced to supplied driver; exact numerical identity with embedded PDF figure not certified
-3,A-C psychophysical points,saved distributions and numerical summaries deposited,data/processed/figure_source_data/figure3_psf_points.csv,source selection traced to supplied driver; exact numerical identity with embedded PDF figure not certified
