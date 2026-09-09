@@ -1,6 +1,8 @@
 """Scientific plot specifications for the lateral-sensitivity archive."""
 from __future__ import annotations
 
+import numpy as np
+
 from ..models import PlotSpec, Series
 from .axes import finite
 
@@ -157,6 +159,242 @@ def position_comparison_plot(row, filters, *, notes_prefix=''):
     spec.series.append(
         Series(x, y, 'Base / Flanker sensitivity', 'scatter', 'cyan')
     )
+    return spec
+
+
+
+def lateral_threshold_box_plot(
+    stairs,
+    filters,
+    *,
+    threshold_column='threshold_last_five',
+    notes_prefix='',
+):
+    """Descriptive box plot of staircase thresholds for one experiment.
+
+    The box uses raw threshold quartiles. Whiskers show the observed minimum
+    and maximum because there are usually only a few staircases at a position.
+    The arithmetic mean is shown separately because THAT is the quantity used
+    in the lateral sensitivity calculation.
+    """
+    title = (
+        f"{filters['participant_id']} — "
+        f"{filters['luminance_label_cd_m2']:g} cd/m² — "
+        f"{filters['probe_position_deg']:g}° — "
+        f"{filters['experiment']} — staircase thresholds"
+    )
+
+    if threshold_column not in stairs:
+        raise ValueError(
+            f'Missing threshold column: {threshold_column}'
+        )
+
+    finite_threshold = np.isfinite(
+        stairs[threshold_column]
+        .to_numpy(dtype=float)
+    ) & (
+        stairs[threshold_column]
+        .to_numpy(dtype=float)
+        > 0
+    )
+
+    included_mask = (
+        stairs.included_for_baseline_candidate
+        .astype(bool)
+        .to_numpy()
+    )
+
+    included = (
+        stairs.loc[
+            finite_threshold
+            & included_mask,
+            threshold_column,
+        ]
+        .to_numpy(dtype=float)
+    )
+
+    excluded = (
+        stairs.loc[
+            finite_threshold
+            & ~included_mask,
+            threshold_column,
+        ]
+        .to_numpy(dtype=float)
+    )
+
+    if len(included) == 0:
+        raise ValueError(
+            'No included finite staircase thresholds '
+            'are available for this selection.'
+        )
+
+    q1, median, q3 = np.percentile(
+        included,
+        [25, 50, 75],
+        method='linear',
+    )
+    minimum = float(np.min(included))
+    maximum = float(np.max(included))
+    mean = float(np.mean(included))
+
+    left = 0.84
+    right = 1.16
+    cap_left = 0.94
+    cap_right = 1.06
+
+    spec = PlotSpec(
+        title,
+        '',
+        'Staircase threshold (normalized digital contrast)',
+        yscale='log',
+        notes=(
+            notes_prefix
+            + 'Descriptive box plot of the included staircase thresholds. '
+              'Box = Q1–Q3; centre line = median; whiskers = observed min–max. '
+              'The diamond is the arithmetic mean threshold actually used '
+              'to compute sensitivity. Individual staircase thresholds are '
+              'shown as points. This is not a confidence interval.'
+        ),
+        metadata={
+            **filters,
+            'Included staircases': int(len(included)),
+            'Excluded staircases': int(len(excluded)),
+            'Minimum threshold': minimum,
+            'Q1 threshold': float(q1),
+            'Median threshold': float(median),
+            'Q3 threshold': float(q3),
+            'Maximum threshold': maximum,
+            'Arithmetic mean threshold': mean,
+            'Sensitivity from mean threshold': float(1.0 / mean),
+        },
+    )
+
+    # Whisker.
+    spec.series.append(
+        Series(
+            [1.0, 1.0],
+            [minimum, maximum],
+            'Observed min–max',
+            color='blue',
+        )
+    )
+    spec.series.append(
+        Series(
+            [cap_left, cap_right],
+            [minimum, minimum],
+            '',
+            color='blue',
+        )
+    )
+    spec.series.append(
+        Series(
+            [cap_left, cap_right],
+            [maximum, maximum],
+            '',
+            color='blue',
+        )
+    )
+
+    # Q1–Q3 box.
+    spec.series.append(
+        Series(
+            [left, left],
+            [float(q1), float(q3)],
+            'Q1–Q3 box',
+            color='cyan',
+        )
+    )
+    spec.series.append(
+        Series(
+            [right, right],
+            [float(q1), float(q3)],
+            '',
+            color='cyan',
+        )
+    )
+    spec.series.append(
+        Series(
+            [left, right],
+            [float(q1), float(q1)],
+            '',
+            color='cyan',
+        )
+    )
+    spec.series.append(
+        Series(
+            [left, right],
+            [float(q3), float(q3)],
+            '',
+            color='cyan',
+        )
+    )
+
+    # Median.
+    spec.series.append(
+        Series(
+            [left, right],
+            [float(median), float(median)],
+            'Median',
+            color='white',
+        )
+    )
+
+    # Individual included thresholds, lightly spread in x only to make
+    # overlapping points visible. Their scientific y values are unchanged.
+    if len(included) == 1:
+        x_points = [1.0]
+    else:
+        x_points = np.linspace(
+            0.94,
+            1.06,
+            len(included),
+        ).tolist()
+
+    spec.series.append(
+        Series(
+            x_points,
+            included.tolist(),
+            'Included staircase thresholds',
+            'scatter',
+            'cyan',
+            marker='●',
+        )
+    )
+
+    # Arithmetic mean: this is the actual aggregator used downstream.
+    spec.series.append(
+        Series(
+            [1.0],
+            [mean],
+            'Arithmetic mean threshold',
+            'scatter',
+            'yellow',
+            marker='◆',
+        )
+    )
+
+    # Preserve excluded observations visibly without letting them define the box.
+    if len(excluded):
+        if len(excluded) == 1:
+            x_excluded = [1.12]
+        else:
+            x_excluded = np.linspace(
+                1.10,
+                1.18,
+                len(excluded),
+            ).tolist()
+
+        spec.series.append(
+            Series(
+                x_excluded,
+                excluded.tolist(),
+                'Excluded staircase thresholds',
+                'scatter',
+                'red',
+                marker='×',
+            )
+        )
+
     return spec
 
 

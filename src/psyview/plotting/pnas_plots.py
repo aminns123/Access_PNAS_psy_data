@@ -164,7 +164,7 @@ def csf_plot(frame, psf, filters, curves, note, stairs=None):
                 curves.spatial_frequency_cpd.tolist(),
                 curves.contrast_sensitivity.tolist(),
                 'Current-helper curve (archived)',
-                color='blue',
+                color='red',
             )
         )
 

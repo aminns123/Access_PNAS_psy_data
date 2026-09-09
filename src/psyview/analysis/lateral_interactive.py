@@ -208,6 +208,7 @@ class LateralInteractiveAnalysis:
             subject_isf_plot,
             lateral_profile_plot,
             position_comparison_plot,
+            lateral_threshold_box_plot,
             lateral_staircase_plot,
         )
 
@@ -279,10 +280,6 @@ class LateralInteractiveAnalysis:
         stairs = self.adapter.select(
             'stairs', filters
         ).copy(deep=True)
-        trials = self.adapter.select('trials', filters)
-        reversals = self.adapter.select(
-            'reversals', filters
-        ).copy(deep=True)
 
         archived_thresholds = {}
         results = {}
@@ -298,10 +295,45 @@ class LateralInteractiveAnalysis:
                 if result['threshold'] is not None
                 else np.nan
             )
-            mask = reversals.staircase_id.eq(row.staircase_id)
-            reversals.loc[mask, 'used_in_final_five'] = (
-                reversals.loc[mask, 'reversal_index']
-                .isin(result['selected_indices'])
+
+        if level == 3:
+            spec = lateral_threshold_box_plot(
+                stairs,
+                filters,
+                threshold_column='threshold_last_five',
+                notes_prefix=f'{label}. ',
+            )
+            spec.title = label + ' | ' + spec.title
+            spec.metadata['Analysis'] = label
+            return spec
+
+        trials = self.adapter.select(
+            'trials',
+            filters,
+        )
+        reversals = self.adapter.select(
+            'reversals',
+            filters,
+        ).copy(deep=True)
+
+        # For the individual staircase view, update which reversals are
+        # highlighted for the current interactive N.
+        for row in stairs.itertuples():
+            result = results[row.staircase_id]
+            mask = reversals.staircase_id.eq(
+                row.staircase_id
+            )
+            reversals.loc[
+                mask,
+                'used_in_final_five'
+            ] = (
+                reversals.loc[
+                    mask,
+                    'reversal_index'
+                ]
+                .isin(
+                    result['selected_indices']
+                )
             )
 
         spec = lateral_staircase_plot(

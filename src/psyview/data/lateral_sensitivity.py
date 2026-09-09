@@ -568,7 +568,7 @@ class LateralAdapter(CSVAdapter):
                     'Diagnostic Eq. B.25 fit '
                     f'(fₙ={result.frequency_cpd:.3g} cpd)'
                 ),
-                color='yellow',
+                color='red',
             )
         )
 
@@ -602,7 +602,7 @@ class LateralAdapter(CSVAdapter):
         )
 
         spec.notes += (
-            ' The yellow curve is a NEW on-demand diagnostic fit of thesis '
+            ' The red curve is a NEW on-demand diagnostic fit of thesis '
             'Eq. B.25 to the currently displayed profile. Points marked red × '
             'are displayed but excluded from this fit. The objective uses the '
             'full recorded spread with a 0.05 floor. It is not an archived '
@@ -651,6 +651,7 @@ class LateralAdapter(CSVAdapter):
             subject_isf_plot,
             lateral_profile_plot,
             position_comparison_plot,
+            lateral_threshold_box_plot,
             lateral_staircase_plot,
         )
 
@@ -702,6 +703,14 @@ class LateralAdapter(CSVAdapter):
             'stairs',
             current_filters,
         )
+
+        if level == 3:
+            return lateral_threshold_box_plot(
+                stairs,
+                current_filters,
+                threshold_column='threshold_last_five',
+            )
+
         trials = self.select(
             'trials',
             current_filters,

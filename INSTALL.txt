@@ -1,106 +1,93 @@
-PsyView lateral legend + point exclusions + 200-cd/m² fix
-=========================================================
+PsyView patch: final Staircase row + red fits + N-sensitive threshold box plot
+=============================================================================
 
 REPLACE:
-    src/psyview/plotting/terminal.py
-    src/psyview/analysis/lateral_fit.py
+    src/psyview/ui/hierarchy.py
     src/psyview/data/lateral_sensitivity.py
-    src/psyview/app.py
-    src/psyview/ui/help_screen.py
+    src/psyview/analysis/lateral_interactive.py
+    src/psyview/plotting/lateral_plots.py
+    src/psyview/plotting/pnas_plots.py
 
-OPTIONAL NEW TEST:
-    tests/test_lateral_profile_candidates.py
+OPTIONAL TEST:
+    tests/test_lateral_threshold_boxplot.py
 
-1. RIGHT-HAND TUI LEGEND
-------------------------
-The Plotext legend is removed from inside the graph and displayed in a
-separate key panel immediately to the right.
+1) FINAL STAIRCASE SELECTOR ROW
+-------------------------------
+Hierarchy now uses a vertical scroll container and explicitly scrolls the
+active row into view. At the final lateral level you should see the boxed
+STAIRCASE row and the selected S1/S2/S3/S4-style item, not merely have the
+plot change invisibly while pressing left/right.
 
-It is formatted as two visual columns:
-    symbol   series name
+2) FIT CURVES ARE RED
+---------------------
+Diagnostic lateral Eq. B.25 fits are now red.
+The CSF current-helper fitted/interpolated curve is also red so "fit/curve"
+has a consistent visual convention.
 
-Example:
-    ●   Lateral sensitivity
-    ┃   spread / 2
-    ━━  Diagnostic Eq. B.25 fit
-    ×   Excluded from diagnostic fit
+3) EXPERIMENT LEVEL IS NOW A THRESHOLD BOX PLOT
+------------------------------------------------
+Lateral hierarchy remains:
 
-Matplotlib is unchanged.
+    Subject
+      -> Luminance
+        -> Position
+          -> Experiment
+            -> Staircase
 
-2. 200-cd/m² LATERAL PROFILE FIX
---------------------------------
-The earlier adapter made a wrong global assumption:
+At Experiment level, PsyView no longer overlays all staircase trial
+trajectories. Instead it shows a descriptive box plot of the INCLUDED
+per-staircase thresholds for that selected Base/Flanker experiment:
 
-    if storage_script_active_exclusions exists anywhere:
-        keep only that candidate everywhere
+    box       = Q1 to Q3
+    centre    = median
+    whiskers  = observed min to max
+    dots      = individual included staircase thresholds
+    diamond   = arithmetic mean threshold actually used for sensitivity
+    red x     = excluded staircase threshold(s), if present
 
-That silently removed valid conditions whose selected archived exclusion
-candidate has a different name.
+The box is descriptive, not a confidence interval.
 
-The public archive actually contains:
-    P01 L010-L050  -> storage_script_active_exclusions
-    P01 L200       -> recorded_exclusion_list
-    P02-P04        -> no_exclusions
+At Staircase level, the original individual trial trajectory + reversals view
+is retained.
 
-Each condition has exactly ONE selected profile candidate already.
+INTERACTIVE N
+-------------
+When you switch to interactive analysis and change N, the Experiment-level
+box plot is rebuilt from the newly recomputed geometric-mean final-N
+threshold for every included staircase.
 
-The new adapter therefore:
-    - keeps every condition's deposited candidate
-    - validates exactly one candidate per condition
-    - validates profile row counts against condition_summary.profile_positions
+So the visual chain is now:
 
-This restores P01 200 cd/m² and prevents the same class of silent omission.
+    choose N
+      -> one threshold per staircase
+      -> threshold distribution / box plot changes
+      -> arithmetic mean threshold changes
+      -> sensitivity changes
 
-3. MANUAL POINT EXCLUSION FROM DIAGNOSTIC FIT
----------------------------------------------
-At lateral Subject -> Luminance:
-
-    F       enable fit
-    E       enter point-edit mode
-    <- / -> move the diamond cursor
-    Enter   exclude/re-include that point
-    C       clear exclusions
-    E       leave point-edit mode
-
-Excluded data remain visible and are marked red ×.
-They are removed ONLY from the diagnostic fit calculation.
-Nothing is written to the empirical repository.
-
-Exclusions are session-only and tracked separately per condition.
-
-4. WHAT FIT IS BEING DONE?
---------------------------
-The current diagnostic fit is NOT an unweighted ordinary curve fit.
-
-It uses:
-    sigma_i = max(full spread_i, 0.05)
-
-and minimizes:
-    sum [ (model_i - data_i) / sigma_i ]^2
-
-This is error-weighted nonlinear least squares.
-
-For independent Gaussian observations with fixed sigma_i, minimizing that
-quantity is mathematically equivalent to maximizing the Gaussian likelihood,
-because the log(sigma_i) terms do not depend on the model parameters.
-
-So the best description is:
-    "error-weighted nonlinear least squares (Gaussian MLE-equivalent for
-     fixed supplied sigma)"
-
-It is still intentionally described as a NEW DIAGNOSTIC FIT rather than the
-historical archived fit, because the historical fit/input linkage and exact
-old fitting sequence are not fully certified.
+This is exactly separate from the individual Staircase view below it.
 
 RUN
 ---
     .\run_psyview.bat
 
-Check P01:
-    Subject P01 -> Luminance
-You should now see:
-    10, 20, 25, 50, 200
+Suggested check:
+    Lateral
+      -> Subject
+      -> Luminance
+      -> Position
+      -> Experiment
 
-At 200, a real lateral profile should render.
+Confirm box plot.
 
-Then press F and E to test manual fit-point exclusions.
+Then:
+    A
+    Enter   (interactive)
+    left/right on N
+
+Confirm the box changes.
+
+Then:
+    Down
+
+Confirm the STAIRCASE selector row is visible and boxed, and left/right moves
+visibly among individual staircases while the trial/reversal plot changes.
