@@ -2,6 +2,7 @@ import numpy as np
 
 from ..models import PlotSpec, Series
 from .axes import finite
+from .boxplots import grouped_box_plot
 
 
 def csf_staircase_variability(stairs, threshold_column='threshold_last8_median'):
@@ -180,6 +181,74 @@ def csf_plot(frame, psf, filters, curves, note, stairs=None):
     )
     return spec
 
+
+
+def pnas_threshold_box_plot(
+    stairs,
+    trials,
+    filters,
+    *,
+    threshold_column='threshold_last8_median',
+    notes_prefix='',
+):
+    """Single threshold-distribution box for the selected CSF frequency.
+
+    This is the same generic grouped-box machinery used by the lateral adapter.
+    The category is the repository's spatial-frequency column; after the user
+    selects one frequency, it naturally contains one category and therefore
+    renders one box.
+    """
+    participant = filters['participant_id']
+    luminance = filters['luminance_cd_m2']
+    frequency = filters['spatial_frequency_cpd']
+
+    reference = (
+        trials.contrast_normalized_source.tolist()
+        if (
+            trials is not None
+            and not trials.empty
+            and 'contrast_normalized_source' in trials
+        )
+        else None
+    )
+
+    spec = grouped_box_plot(
+        stairs,
+        category_column='spatial_frequency_cpd',
+        value_column=threshold_column,
+        included_column='included_in_primary_csf',
+        title=(
+            f'{participant} — {luminance:g} cd/m² — '
+            f'{frequency:g} cpd — staircase thresholds'
+        ),
+        xlabel='Spatial frequency (cpd)',
+        ylabel='Staircase threshold (normalized source contrast)',
+        yscale='log',
+        reference_values=reference,
+        notes_prefix=(
+            notes_prefix
+            + 'The y-axis inherits the raw staircase trial-contrast range for '
+              'this selected spatial frequency, so the threshold distribution '
+              'is shown on the same scale as the individual staircase view. '
+        ),
+        metadata={
+            **filters,
+            'Y-axis reference source':
+                'trial-level normalized source contrast for current selection',
+        },
+        mean_label='Arithmetic mean threshold',
+    )
+
+    groups = spec.metadata.get('Box-plot groups', {})
+    if len(groups) == 1:
+        summary = next(iter(groups.values()))
+        mean_threshold = summary.get('mean')
+        if mean_threshold is not None and mean_threshold > 0:
+            spec.metadata['Sensitivity from arithmetic mean threshold'] = (
+                1.0 / float(mean_threshold)
+            )
+
+    return spec
 
 def staircase_plot(stairs, trials, reversals, filters, csf):
     individual = 'staircase_id' in filters

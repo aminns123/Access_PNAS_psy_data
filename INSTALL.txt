@@ -1,69 +1,36 @@
-PsyView compact breadcrumb hierarchy patch
-==========================================
+PNAS adapter hotfix
+===================
 
-REPLACE:
-    src/psyview/ui/hierarchy.py
-    src/psyview/app.py
-    src/psyview/ui/help_screen.py
+You do NOT need to revert the whole project.
 
-WHAT CHANGES
-------------
-Instead of keeping every previous hierarchy level as a full boxed row, PsyView
-now collapses the selected path into one compact breadcrumb.
+Replace only:
 
-Example at Staircase level:
+    src/psyview/data/pnas_psychophysics.py
 
-    PATH: P01 | 40 | 0.768 | base | S1
+with the file in this ZIP.
 
-    STAIRCASE
-    [ S1 ] [ S2 ] [ S3 ] [ S4 ]
+This fixes the indentation/nesting error from the previous PNAS box-plot patch.
 
-Only the CURRENT level remains as a full selector row.
+The intended structure is restored:
 
-This means:
-    - the hierarchy height stays constant as you move deeper
-    - the plot no longer gets pushed downward
-    - no vertical hierarchy scrollbar grows with depth
-    - Up / Down continue to move between hierarchy levels
-    - Left / Right continue to change the current value
-    - the breadcrumb tells you exactly which branch you are on
+    class PNASAdapter:
+        ...
+        def get_plot(...):
+            ...
+        def interactive_threshold_box_plot(...):
+            ...
+        def archived_plot(...):
+            ...
 
-GENERALITY
-----------
-The breadcrumb does not know about Subject, Luminance, Position, Experiment,
-or Staircase. It simply displays the selected values from whatever hierarchy
-the active adapter provides.
+So all existing PSF/CSF plotting should return, while keeping:
 
-So a future dataset might show:
+    Subject          -> PSF vs luminance
+    Luminance        -> CSF
+    Spatial frequency-> threshold box plot
+    Staircase        -> individual trajectory/reversals
 
-    PATH: mouse_07 | session_3 | control | trial_12
+No empirical data files are changed.
 
-without any PsyView UI changes.
+Run:
 
-RUN
----
     .\run_psyview.bat
-
-Suggested check:
-    move from Subject all the way down to Staircase.
-
-The plot should remain at essentially the same vertical position throughout,
-while the path changes from something like:
-
-    PATH: P01
-
-to:
-
-    PATH: P01 | 40
-
-to:
-
-    PATH: P01 | 40 | 0.768
-
-to:
-
-    PATH: P01 | 40 | 0.768 | base
-
-to:
-
-    PATH: P01 | 40 | 0.768 | base | S1
