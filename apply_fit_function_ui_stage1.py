@@ -230,7 +230,7 @@ def patch_help(text: str) -> str:
         "            'Excluded points remain visible and are marked with a red ×. Exclusions\\n'\n",
         "            'The G editor is stage-1 interface/state only: custom text is shown as\\n'\n"
         "            'CUSTOM PREVIEW — NOT FITTED. F still runs the unchanged thesis Eq. B.25\\n'\n"
-        "            'fitter. Ctrl+D restores the default preview; Esc cancels.\\n\\n'\n"
+        "            'fitter. Ctrl+R restores the default preview; Esc cancels.\\n\\n'\n"
         "            'Excluded points remain visible and are marked with a red ×. Exclusions\\n'\n",
         "help stage-one explanation",
     )

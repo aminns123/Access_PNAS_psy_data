@@ -114,7 +114,7 @@ class FitFunctionScreen(ModalScreen):
                 markup=False,
             )
             yield Static(
-                "Enter: next/apply   Ctrl+D: default   Esc: cancel",
+                "Enter: next/apply   Ctrl+R: default   Esc: cancel",
                 id="fit-function-footer",
                 markup=False,
             )

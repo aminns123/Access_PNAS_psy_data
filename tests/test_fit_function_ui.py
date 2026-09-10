@@ -84,7 +84,7 @@ async def test_g_escape_preserves_previous_preview(
         assert app.fit_function_preview is None
 
 
-async def test_g_ctrl_d_restores_default_preview(
+async def test_g_ctrl_r_restores_default_preview(
     tiny_lateral,
     tmp_path,
 ):
@@ -101,16 +101,20 @@ async def test_g_ctrl_d_restores_default_preview(
             "#fit-parameters",
             Input,
         )
+
         equation.value = "A*x"
         await pilot.press("enter")
+
         parameters.value = "A"
         await pilot.press("enter")
         await pilot.pause(.05)
+
         assert app.fit_function_preview is not None
 
         await pilot.press("g")
         assert isinstance(app.screen, FitFunctionScreen)
-        await pilot.press("ctrl+d")
+
+        await pilot.press("ctrl+r")
         await pilot.pause(.05)
 
         assert app.fit_function_preview is None
