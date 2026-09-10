@@ -59,6 +59,7 @@ def subject_isf_plot(frame, filters):
                 [row.isf_lower_cpd, row.isf_upper_cpd],
                 '0.5–99.5 percentile endpoints' if index == 0 else '',
                 color='blue',
+                role='uncertainty',
             )
         )
         spec.series.append(
@@ -117,10 +118,12 @@ def lateral_profile_plot(frame, filters, *, notes_prefix=''):
                     ],
                     'spread / 2' if index == 0 else '',
                     color='blue',
+                    role='uncertainty',
                 )
             )
     spec.series.append(
-        Series([], [0.0], 'No lateral modulation', 'hline', 'white', True)
+        Series([], [0.0], 'No lateral modulation', 'hline', 'white', True,
+               role='reference')
     )
     return spec
 
@@ -303,6 +306,7 @@ def lateral_staircase_plot(stairs, trials, reversals, filters):
                     'hline',
                     color,
                     True,
+                    role='reference',
                 )
             )
     return spec

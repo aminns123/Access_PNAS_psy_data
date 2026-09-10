@@ -459,6 +459,7 @@ class LateralAdapter(CSVAdapter):
                         'scatter',
                         'red',
                         marker='×',
+                        role='reference',
                     )
                 )
 
@@ -483,6 +484,7 @@ class LateralAdapter(CSVAdapter):
                         'scatter',
                         'magenta',
                         marker='◆',
+                        role='cursor',
                     )
                 )
 
@@ -569,6 +571,7 @@ class LateralAdapter(CSVAdapter):
                     f'(fₙ={result.frequency_cpd:.3g} cpd)'
                 ),
                 color='red',
+                role='fit',
             )
         )
 

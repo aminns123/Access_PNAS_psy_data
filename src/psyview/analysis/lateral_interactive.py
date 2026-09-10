@@ -399,6 +399,7 @@ class LateralInteractiveAnalysis:
                         'hline',
                         'white',
                         True,
+                        role='reference',
                     )
                 )
 

@@ -58,9 +58,20 @@ a different content key. Cache writes are forbidden inside the selected dataset.
 Subject, luminance, spatial-frequency and staircase views share prepared
 scientific data between terminal and Matplotlib rendering. Scientific values
 remain raw. Logarithmic axes show physical values, circles show measurements,
-and diamonds identify selected final-N reversals (eight in archived mode). Bounds include 7% padding in
-linear or logarithmic space. Nonpositive observations explicitly switch an
-otherwise logarithmic axis to linear. Exclusions are displayed, never edited.
+and diamonds identify selected final-N reversals (eight in archived mode).
+Automatic and shared sibling-row limits use empirical observations and their
+displayed uncertainty. Fits, model bands, references and diagnostic cursors are
+overlays and cannot enlarge either axis. Exclusions are displayed, never edited.
+
+Adapters can set `Series.role` to `data` (the backward-compatible default),
+`uncertainty` (empirical intervals), `fit` (including model uncertainty),
+`reference`, or `cursor`. Only `data` and `uncertainty` contribute to automatic
+limits; horizontal/vertical reference-line kinds are also excluded for legacy
+specs. Explicit limits remain authoritative. Series labels do not determine
+axis extents. YAML `axis_policy` supplies scales, row/local sharing, rounding,
+and soft `preferred_min`/`preferred_max` bounds. Lateral profiles prefer −1 to +1
+but expand for empirical excursions. Log limits ignore nonpositive empirical
+coordinates, falling back to linear when no positive empirical values remain.
 
 M needs an interactive Matplotlib backend. Backend selection is automatic;
 ordinary Python installations with working Tk support can use TkAgg.

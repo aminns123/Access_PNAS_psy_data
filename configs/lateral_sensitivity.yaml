@@ -40,6 +40,9 @@ axis_policy:
       scale: linear
       limits: row
       rounding: nice
+      # Soft window; empirical points/spread may expand it, fit overlays cannot.
+      preferred_min: -1
+      preferred_max: 1
 
   # Position and Experiment levels are threshold-distribution box views.
   # Their X positions are categorical; Y is logarithmic and fixed by row.

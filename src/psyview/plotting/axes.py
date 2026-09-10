@@ -207,22 +207,38 @@ def nice_y_limits(values, scale='linear'):
 
     return lower, upper
 
+
+def empirical_axis_values(spec, axis):
+    """Finite physical coordinates of observations and empirical uncertainty.
+
+    Unannotated series remain data for adapter compatibility. Reference-line
+    kinds are annotations even in older specs without an explicit role.
+    With no empirical content, return no values rather than size to overlays.
+    """
+    return [
+        float(value)
+        for series in spec.series
+        if getattr(series, 'role', 'data') in ('data', 'uncertainty')
+        and getattr(series, 'kind', 'line') not in ('vline', 'hline')
+        for value in getattr(series, axis)
+        if finite(value)
+    ]
+
+
 def axis_policy(spec, axis):
     """Resolve scale and limits in PHYSICAL data coordinates.
 
-    For logarithmic axes, non-positive series values are not valid log
+    Automatic limits use only empirical data and uncertainty; explicit limits
+    remain authoritative. Overlay coordinates never enlarge the window.
+
+    For logarithmic axes, non-positive empirical values are not valid log
     coordinates. They are ignored for log-limit calculation rather than
     forcing an otherwise valid positive plot back to linear.
 
     We only fall back to linear when there are no positive values available
     for a requested log axis.
     """
-    values = [
-        float(value)
-        for series in spec.series
-        for value in getattr(series, axis)
-        if finite(value)
-    ]
+    values = empirical_axis_values(spec, axis)
 
     requested_scale = getattr(
         spec,
@@ -263,9 +279,8 @@ def axis_policy(spec, axis):
             and override_values[1] > 0
         )
 
-        # Keep the scientifically requested logarithmic scale whenever there
-        # is something positive to plot. A negative tail of an auxiliary fit
-        # or helper curve must not turn a CSF into a linear-axis plot.
+        # Keep the requested log scale for a valid explicit window or positive
+        # empirical content. Overlays cannot affect this scale decision.
         if positive_override:
             return (
                 'log',
@@ -346,8 +361,8 @@ def axis_policy(spec, axis):
 def shared_axis_limits(specs, axis):
     """Return one limit pair encompassing every sibling plot in a row.
 
-    Each sibling first gets its normal local axis policy.  The shared row
-    limits are then the union of those resolved limits.  This preserves the
+    Each sibling first gets its empirical local axis policy. The shared row
+    limits are then the union of those physical limits. This preserves the
     existing readable rounding/padding while guaranteeing that left/right
     navigation within one hierarchy row never changes the displayed range.
     """

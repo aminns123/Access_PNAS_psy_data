@@ -21,6 +21,10 @@ class Series:
     color: str = "cyan"
     dashed: bool = False
     marker: str = '●'
+    # Only data and empirical uncertainty determine automatic axis extents.
+    # Use fit for model curves/bands, reference for annotations, cursor for
+    # diagnostic markers. Appended to preserve existing positional arguments.
+    role: str = 'data'
 
 
 @dataclass

@@ -173,7 +173,7 @@ class InteractiveAnalysis:
             return PlotSpec(f'{prefix} | {filters["participant_id"]} — Preferred spatial frequency vs luminance',
                             'Luminance (cd/m²)', 'Preferred spatial frequency (cpd)',
                             [Series(x, y, f'Interactive N={n} PSF', 'scatter'),
-                             Series(frame.luminance_cd_m2.tolist(), frame.f_pref_mean_cpd.tolist(), 'Archived mean reference', 'scatter', 'white')],
+                             Series(frame.luminance_cd_m2.tolist(), frame.f_pref_mean_cpd.tolist(), 'Archived mean reference', 'scatter', 'white', role='reference')],
                             xscale='log', notes=notes+' '+'; '.join(failures), metadata=metadata)
         psf = self.adapter.select('psf', {k:v for k,v in filters.items() if k in ('participant_id','luminance_cd_m2')}).iloc[0]
         if level == 1:
@@ -188,8 +188,8 @@ class InteractiveAnalysis:
                 if not part.empty:
                     spec.series.append(Series(part.spatial_frequency_cpd.tolist(), part.contrast_sensitivity.tolist(), f'Interactive {label}', 'scatter', color))
             if result['peak'] is not None:
-                spec.series.append(Series(result['curve_x'], result['curve_y'], 'Interactive AoE fit', color='blue'))
-                spec.series.append(Series([result['peak']], [], 'Interactive f_pref', 'vline', 'yellow'))
+                spec.series.append(Series(result['curve_x'], result['curve_y'], 'Interactive AoE fit', color='blue', role='fit'))
+                spec.series.append(Series([result['peak']], [], 'Interactive f_pref', 'vline', 'yellow', role='reference'))
             return spec
         stairs = self.adapter.select('stairs', filters).copy(deep=True)
         trials = self.adapter.select('trials', filters)
@@ -217,7 +217,7 @@ class InteractiveAnalysis:
             archived = self.adapter.select('stairs', filters).iloc[0].threshold_last8_median
             spec.metadata.update({'Detected reversals': results[sid]['detected_count'], 'Interactive threshold': results[sid]['threshold'], 'Archived threshold': archived})
             if np.isfinite(archived):
-                spec.series.append(Series([], [float(archived)], 'Archived threshold reference', 'hline', 'white', True))
+                spec.series.append(Series([], [float(archived)], 'Archived threshold reference', 'hline', 'white', True, role='reference'))
         for series in spec.series:
             if series.label == 'final eight':
                 series.label = f'final {n}'

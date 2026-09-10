@@ -70,6 +70,7 @@ def add_csf_variability_bars(spec, variability, label='Across-staircase threshol
                 [row['lower_sensitivity'], row['upper_sensitivity']],
                 label if index == 0 else '',
                 color='white',
+                role='uncertainty',
             )
         )
     return spec
@@ -104,6 +105,7 @@ def subject_plot(frame, filters):
                 [row.percentile_2_5_cpd, row.percentile_97_5_cpd],
                 '2.5–97.5 percentiles' if i == 0 else '',
                 color='blue',
+                role='uncertainty',
             )
         )
     return spec
@@ -166,6 +168,7 @@ def csf_plot(frame, psf, filters, curves, note, stairs=None):
                 curves.contrast_sensitivity.tolist(),
                 'Current-helper curve (archived)',
                 color='red',
+                role='fit',
             )
         )
 
@@ -177,6 +180,7 @@ def csf_plot(frame, psf, filters, curves, note, stairs=None):
             'vline',
             'yellow',
             True,
+            role='reference',
         )
     )
     return spec
@@ -388,6 +392,7 @@ def staircase_plot(stairs, trials, reversals, filters, csf):
                     'hline',
                     color,
                     True,
+                    role='reference',
                 )
             )
 
