@@ -1,110 +1,44 @@
-PsyView fixed hierarchy-row axes patch
-======================================
+PsyView fixed-row axes HOTFIX
+=============================
 
-REPLACE:
+You do NOT need to revert anything else.
+
+Replace only:
+
     src/psyview/app.py
-    src/psyview/plotting/axes.py
 
-OPTIONAL:
-    tests/test_shared_row_axes.py
+WHY IT CRASHED
+--------------
+The previous fixed-row-axes patch accidentally generated two methods at the
+wrong indentation level:
 
-WHAT "FIXED BY ROW" NOW MEANS
------------------------------
-The scale is no longer recalculated independently for every left/right choice.
+    _prepare_plot_with_row_axes(...)
+    _legend_text(...)
 
-Instead, when PsyView is on a hierarchy row, it considers ALL sibling choices
-available on that row under the same selected parents and takes an axis range
-large enough to contain all of them.
+Python accepted the file as syntactically valid, but they were no longer
+methods of class PsyView. That meant opening a dataset failed when PsyView
+tried to call the new shared-row-axis renderer.
 
-Examples:
+THIS HOTFIX
+-----------
+Only corrects that class structure. It keeps the intended features:
 
-TOP SUBJECT ROW
-    S1 | S2 | S3 | S4
+    - fixed x/y ranges across sibling conditions in a hierarchy row
+    - box plots keep categorical/local x but share y across siblings
+    - min/middle/max y ticks
+    - AXES information in the right-hand key
+    - compact breadcrumb hierarchy
+    - all existing lateral + PNAS behavior
 
-All four Subject-level plots share exactly the same numeric x and y limits.
-Cycling S1 -> S2 -> S3 -> S4 therefore does NOT move either scale.
+No empirical data or GitHub repositories are modified.
 
-LUMINANCE / CONDITION ROW
-    10 | 20 | 50 | 100 | ...
-
-All plots for those sibling luminances under the current subject share one x/y
-range.
-
-STAIRCASE ROW
-    S1 | S2 | S3 | S4
-
-All individual staircase trajectories under the current parents share one x/y
-range, so the trajectories can be compared directly without rescaling.
-
-BOX-PLOT ROWS
--------------
-Box plots are the deliberate exception on x.
-
-Their y range is fixed across every sibling condition on that row, but their
-x-axis remains categorical/local so the selected condition/category can still
-be named directly.
-
-For example, PNAS Spatial frequency:
-
-    select 2 cpd   -> one box labelled "2"
-    select 4 cpd   -> one box labelled "4"
-    select 8 cpd   -> one box labelled "8"
-
-All of those boxes use THE SAME y limits, encompassing the threshold
-distributions for every spatial-frequency sibling in that row.
-
-Likewise lateral Position/Experiment box plots share y scales across siblings
-while retaining their repository-defined x categories.
-
-AXIS KEY
---------
-The right-hand panel now explicitly reports both axes:
-
-    X: ...
-    X range: ... -> ...
-    X scale: ...
-
-    Y: ...
-    Y range: ... -> ...
-    Y scale: ...
-
-    Scale: fixed across N <row-name> values
-
-For categorical box plots it instead reports:
-
-    X values: ...
-
-This makes it explicit whether two conditions genuinely share a scale.
-
-HOW THE RANGE IS CHOSEN
------------------------
-Each sibling plot first receives the same normal "nice" local limits already
-used by PsyView. The row then takes the union:
-
-    shared min = smallest sibling lower limit
-    shared max = largest sibling upper limit
-
-So the final shared scale contains every sibling plot without arbitrary global
-dataset-wide inflation.
-
-The scope is hierarchical:
-    top row -> all top-row siblings
-    child row -> all siblings under the currently selected parent(s)
-
-This is generic and adapter-independent. No Subject/Luminance/Staircase names
-are hard-coded into the scale algorithm.
-
-FITS / INTERACTIVE N
---------------------
-Interactive plots are included at the current N.
-
-When a diagnostic fit is enabled, sibling fitted plots are also considered so
-the fit does not cause one condition to use a different scale.
-
-NO SCIENCE OR DATA CHANGES
---------------------------
-No empirical data, thresholds, sensitivities, fits, exclusions, or repository
-files are modified. This is display policy only.
+VALIDATION
+----------
+The replacement file was:
+    1. Python syntax compiled
+    2. parsed with Python AST
+    3. checked to confirm redraw(), _prepare_plot_with_row_axes(),
+       _legend_text(), and display_spec() are direct PsyView methods
 
 RUN
 ---

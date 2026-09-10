@@ -320,39 +320,9 @@ class PsyView(App):
         )
 
 
-@classmethod
-def _prepare_plot_with_row_axes(
-    cls,
-    adapter,
-    level,
-    filters,
-    analysis,
-    use_fit,
-    fit_cursor_x,
-    fit_edit_mode,
-    parent_filters,
-    sibling_values,
-):
-    """Prepare current plot and lock its scale to its hierarchy row.
-
-    "Row" means the values selectable with left/right at the current
-    hierarchy depth, under the currently selected parents.
-
-    Examples:
-      Subject row:
-          all subjects share one x/y range.
-
-      Luminance row:
-          all luminances for the current subject share one x/y range.
-
-      Spatial-frequency row:
-          all frequencies for the current subject/luminance share one
-          y range. If the plot is categorical (box plot), x remains local.
-
-      Staircase row:
-          all staircases under the current parents share one x/y range.
-    """
-    spec = cls._prepare_plot(
+    @classmethod
+    def _prepare_plot_with_row_axes(
+        cls,
         adapter,
         level,
         filters,
@@ -360,94 +330,124 @@ def _prepare_plot_with_row_axes(
         use_fit,
         fit_cursor_x,
         fit_edit_mode,
-    )
-
-    level_definition = adapter.levels()[level]
-    sibling_specs = []
-
-    for value in sibling_values:
-        sibling_filters = dict(
-            parent_filters
-        )
-        sibling_filters[
-            level_definition.column
-        ] = value
-
-        try:
-            # Reuse current plot when it has no transient edit cursor.
-            if (
-                sibling_filters == filters
-                and not (
-                    use_fit
-                    and fit_edit_mode
-                )
-            ):
-                sibling_spec = spec
-            else:
-                sibling_spec = cls._prepare_plot(
-                    adapter,
-                    level,
-                    sibling_filters,
-                    analysis,
-                    use_fit,
-                    None,
-                    False,
-                )
-
-            sibling_specs.append(
-                sibling_spec
-            )
-
-        # A single unavailable sibling must not make the current valid
-        # selection disappear. Available siblings still define the scale.
-        except Exception:
-            logger.debug(
-                'Skipping sibling while resolving shared row axes',
-                exc_info=True,
-            )
-
-    if not sibling_specs:
-        sibling_specs = [spec]
-
-    from .plotting.axes import (
-        shared_axis_limits,
-    )
-
-    shared_y = shared_axis_limits(
-        sibling_specs,
-        'y',
-    )
-    if shared_y is not None:
-        spec.ylim = shared_y
-
-    # Box/categorical plots intentionally keep their x positions local.
-    # Their category label (e.g. selected spatial frequency, base/flanker)
-    # remains the x-axis value, while only y is fixed across siblings.
-    if not getattr(
-        spec,
-        'xticks',
-        [],
+        parent_filters,
+        sibling_values,
     ):
-        shared_x = shared_axis_limits(
+        """Prepare current plot and lock its scale to its hierarchy row.
+    
+        "Row" means the values selectable with left/right at the current
+        hierarchy depth, under the currently selected parents.
+    
+        Examples:
+          Subject row:
+              all subjects share one x/y range.
+    
+          Luminance row:
+              all luminances for the current subject share one x/y range.
+    
+          Spatial-frequency row:
+              all frequencies for the current subject/luminance share one
+              y range. If the plot is categorical (box plot), x remains local.
+    
+          Staircase row:
+              all staircases under the current parents share one x/y range.
+        """
+        spec = cls._prepare_plot(
+            adapter,
+            level,
+            filters,
+            analysis,
+            use_fit,
+            fit_cursor_x,
+            fit_edit_mode,
+        )
+    
+        level_definition = adapter.levels()[level]
+        sibling_specs = []
+    
+        for value in sibling_values:
+            sibling_filters = dict(
+                parent_filters
+            )
+            sibling_filters[
+                level_definition.column
+            ] = value
+    
+            try:
+                # Reuse current plot when it has no transient edit cursor.
+                if (
+                    sibling_filters == filters
+                    and not (
+                        use_fit
+                        and fit_edit_mode
+                    )
+                ):
+                    sibling_spec = spec
+                else:
+                    sibling_spec = cls._prepare_plot(
+                        adapter,
+                        level,
+                        sibling_filters,
+                        analysis,
+                        use_fit,
+                        None,
+                        False,
+                    )
+    
+                sibling_specs.append(
+                    sibling_spec
+                )
+    
+            # A single unavailable sibling must not make the current valid
+            # selection disappear. Available siblings still define the scale.
+            except Exception:
+                logger.debug(
+                    'Skipping sibling while resolving shared row axes',
+                    exc_info=True,
+                )
+    
+        if not sibling_specs:
+            sibling_specs = [spec]
+    
+        from .plotting.axes import (
+            shared_axis_limits,
+        )
+    
+        shared_y = shared_axis_limits(
             sibling_specs,
-            'x',
+            'y',
         )
-        if shared_x is not None:
-            spec.xlim = shared_x
-
-    spec.metadata[
-        '_row_axis_scope'
-    ] = (
-        f'fixed across {len(sibling_specs)} '
-        f'{level_definition.name} value'
-        + (
-            ''
-            if len(sibling_specs) == 1
-            else 's'
+        if shared_y is not None:
+            spec.ylim = shared_y
+    
+        # Box/categorical plots intentionally keep their x positions local.
+        # Their category label (e.g. selected spatial frequency, base/flanker)
+        # remains the x-axis value, while only y is fixed across siblings.
+        if not getattr(
+            spec,
+            'xticks',
+            [],
+        ):
+            shared_x = shared_axis_limits(
+                sibling_specs,
+                'x',
+            )
+            if shared_x is not None:
+                spec.xlim = shared_x
+    
+        spec.metadata[
+            '_row_axis_scope'
+        ] = (
+            f'fixed across {len(sibling_specs)} '
+            f'{level_definition.name} value'
+            + (
+                ''
+                if len(sibling_specs) == 1
+                else 's'
+            )
         )
-    )
-
-    return spec
+    
+        return spec
 
     async def redraw(self):
         self.plot_generation += 1
@@ -682,123 +682,123 @@ def _prepare_plot_with_row_axes(
         return '━━'
 
 
-def _legend_text(self, spec):
-    from .plotting.axes import (
-        axis_policy,
-        tick_label,
-    )
-
-    entries = []
-    seen = set()
-
-    for series in spec.series:
-        label = (
-            str(series.label).strip()
-            if series.label
-            else ''
+    def _legend_text(self, spec):
+        from .plotting.axes import (
+            axis_policy,
+            tick_label,
         )
-        if (
-            not label
-            or label in seen
-        ):
-            continue
-
-        seen.add(label)
-        entries.append(
-            (
-                self._legend_symbol(
-                    series
-                ),
-                label,
+    
+        entries = []
+        seen = set()
+    
+        for series in spec.series:
+            label = (
+                str(series.label).strip()
+                if series.label
+                else ''
             )
+            if (
+                not label
+                or label in seen
+            ):
+                continue
+    
+            seen.add(label)
+            entries.append(
+                (
+                    self._legend_symbol(
+                        series
+                    ),
+                    label,
+                )
+            )
+    
+        x_scale, x_limits, _ = axis_policy(
+            spec,
+            'x',
         )
-
-    x_scale, x_limits, _ = axis_policy(
-        spec,
-        'x',
-    )
-    y_scale, y_limits, _ = axis_policy(
-        spec,
-        'y',
-    )
-
-    lines = [
-        'AXES',
-        '',
-        f'X: {spec.xlabel or "not specified"}',
-    ]
-
-    if getattr(
-        spec,
-        'xticks',
-        [],
-    ):
-        category_text = ' | '.join(
-            str(label)
-            for _, label in spec.xticks
+        y_scale, y_limits, _ = axis_policy(
+            spec,
+            'y',
         )
-        lines.append(
-            f'X values: {category_text}'
+    
+        lines = [
+            'AXES',
+            '',
+            f'X: {spec.xlabel or "not specified"}',
+        ]
+    
+        if getattr(
+            spec,
+            'xticks',
+            [],
+        ):
+            category_text = ' | '.join(
+                str(label)
+                for _, label in spec.xticks
+            )
+            lines.append(
+                f'X values: {category_text}'
+            )
+        else:
+            lines.append(
+                'X range: '
+                f'{tick_label(x_limits[0])} → '
+                f'{tick_label(x_limits[1])}'
+            )
+            lines.append(
+                f'X scale: {x_scale}'
+            )
+    
+        lines.extend([
+            f'Y: {spec.ylabel or "not specified"}',
+            (
+                'Y range: '
+                f'{tick_label(y_limits[0])} → '
+                f'{tick_label(y_limits[1])}'
+            ),
+            f'Y scale: {y_scale}',
+        ])
+    
+        scope = spec.metadata.get(
+            '_row_axis_scope',
+            '',
         )
-    else:
-        lines.append(
-            'X range: '
-            f'{tick_label(x_limits[0])} → '
-            f'{tick_label(x_limits[1])}'
-        )
-        lines.append(
-            f'X scale: {x_scale}'
-        )
-
-    lines.extend([
-        f'Y: {spec.ylabel or "not specified"}',
-        (
-            'Y range: '
-            f'{tick_label(y_limits[0])} → '
-            f'{tick_label(y_limits[1])}'
-        ),
-        f'Y scale: {y_scale}',
-    ])
-
-    scope = spec.metadata.get(
-        '_row_axis_scope',
-        '',
-    )
-    if scope:
+        if scope:
+            lines.extend([
+                '',
+                f'Scale: {scope}',
+            ])
+    
         lines.extend([
             '',
-            f'Scale: {scope}',
+            'KEY',
+            '',
         ])
-
-    lines.extend([
-        '',
-        'KEY',
-        '',
-    ])
-
-    wrap_width = 27
-
-    if not entries:
-        lines.append(
-            '(no labelled series)'
-        )
-    else:
-        for symbol, label in entries:
-            wrapped = textwrap.wrap(
-                label,
-                width=wrap_width,
-            ) or ['']
-
+    
+        wrap_width = 27
+    
+        if not entries:
             lines.append(
-                f'{symbol:<3}{wrapped[0]}'
+                '(no labelled series)'
             )
-            for continuation in wrapped[1:]:
+        else:
+            for symbol, label in entries:
+                wrapped = textwrap.wrap(
+                    label,
+                    width=wrap_width,
+                ) or ['']
+    
                 lines.append(
-                    f'   {continuation}'
+                    f'{symbol:<3}{wrapped[0]}'
                 )
-            lines.append('')
-
-    return '\n'.join(lines).rstrip()
+                for continuation in wrapped[1:]:
+                    lines.append(
+                        f'   {continuation}'
+                    )
+                lines.append('')
+    
+        return '\n'.join(lines).rstrip()
 
     def display_spec(self, spec):
         self.spec = spec
