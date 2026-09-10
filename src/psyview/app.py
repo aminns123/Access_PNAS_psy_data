@@ -14,6 +14,8 @@ from .ui.hierarchy import Hierarchy
 from .ui.help_screen import HelpScreen
 from .ui.busy import BusyOverlay
 from .ui.axis_limit_screen import AxisLimitScreen
+from .ui.fit_function_screen import FitFunctionScreen
+from .ui.fit_function_state import fit_function_panel_text
 from .ui.view_state import SCALE_CHOICES, SCOPE_CHOICES, cycle_choice
 from .plotting.terminal import (
     TerminalPlotRenderer,
@@ -127,6 +129,7 @@ class PsyView(App):
         ('m', 'matplotlib', 'Matplotlib'),
         ('s', 'save', 'Save PNG'),
         Binding('f', 'fit', 'Fit', show=False),
+        Binding('g', 'fit_function', 'Fit function', show=False),
         Binding('e', 'fit_edit', 'Fit points', show=False),
         Binding('c', 'clear_fit', 'Clear fit exclusions', show=False),
         ('h', 'help', 'Help'),
@@ -159,6 +162,8 @@ class PsyView(App):
         self.fit_enabled = False
         self.fit_edit_mode = False
         self.fit_cursor_index = 0
+        # Stage-1 UI only: this text is never executed by the fitter.
+        self.fit_function_preview = None
 
         # Session-only View overrides, scoped by hierarchy level/view type.
         # Missing entries mean the dataset/default policy remains authoritative.
@@ -1102,13 +1107,28 @@ class PsyView(App):
         ])
         return '\n'.join(lines)
 
+    def _fit_function_panel_text(self):
+        if not self._fit_supported_here():
+            return ''
+        return fit_function_panel_text(
+            self.fit_function_preview
+        )
+
     def _refresh_right_panel(self, spec=None):
         current = self.spec if spec is None else spec
         panel = self.query_one('#legend', Static)
         if self.view_focus:
             panel.update(self._view_panel_text(current))
         elif current is not None:
-            panel.update(self._legend_text(current))
+            legend = self._legend_text(current)
+            fit_function = self._fit_function_panel_text()
+            panel.update(
+                (
+                    fit_function + '\n\n' + legend
+                    if fit_function
+                    else legend
+                )
+            )
         else:
             panel.update('')
 
@@ -1492,6 +1512,7 @@ class PsyView(App):
             )
 
         if self._fit_supported_here():
+            mode += ' | G: FUNCTION'
             mode += (
                 ' | F: '
                 + (
@@ -1623,6 +1644,54 @@ class PsyView(App):
             not self.analysis_focus
         )
         self.show_analysis()
+
+    def action_fit_function(self):
+        if not self._fit_supported_here():
+            self.notify(
+                'Fit-function preview is available on the lateral '
+                'Luminance/profile level.'
+            )
+            return
+
+        self.analysis_focus = False
+        self.fit_edit_mode = False
+        self.view_focus = False
+
+        def receive(result):
+            if result is None:
+                self._refresh_right_panel()
+                self._queue_keyboard_focus_restore()
+                return
+
+            mode = result.get('mode')
+            if mode == 'default':
+                self.fit_function_preview = None
+                self.notify(
+                    'Fit-function preview reset. '
+                    'F continues to fit thesis Eq. B.25.'
+                )
+            elif mode == 'preview':
+                preview = result.get('preview')
+                if preview is None:
+                    return
+                self.fit_function_preview = preview
+                self.notify(
+                    'Custom equation saved as a session-only preview. '
+                    'It is NOT fitted yet; F still fits thesis Eq. B.25.'
+                )
+            else:
+                return
+
+            self._refresh_right_panel()
+            self.show_analysis()
+            self._queue_keyboard_focus_restore()
+
+        self.push_screen(
+            FitFunctionScreen(
+                self.fit_function_preview
+            ),
+            receive,
+        )
 
     async def action_fit(self):
         if not self._fit_supported_here():
@@ -2046,6 +2115,7 @@ class PsyView(App):
             self.fit_enabled = False
             self.fit_edit_mode = False
             self.fit_cursor_index = 0
+            self.fit_function_preview = None
             self.axis_scale_overrides.clear()
             self.axis_limit_overrides.clear()
             self.axis_scope_overrides.clear()

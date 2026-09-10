@@ -39,6 +39,8 @@ jobs:
           tests/test_view_state.py
           tests/test_display_refinements.py
           tests/test_fit_ui.py
+          tests/test_fit_function_state.py
+          tests/test_fit_function_ui.py
       - name: Windows launcher smoke test
         if: runner.os == 'Windows'
         shell: cmd
