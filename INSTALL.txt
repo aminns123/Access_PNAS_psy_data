@@ -1,45 +1,168 @@
-PsyView fixed-row axes HOTFIX
-=============================
+PsyView declarative scientific axes + user scale override
+=========================================================
 
-You do NOT need to revert anything else.
-
-Replace only:
-
+REPLACE:
     src/psyview/app.py
+    src/psyview/plotting/axes.py
+    src/psyview/data/config.py
+    src/psyview/ui/help_screen.py
+    src/psyview/configs/pnas_psychophysics.yaml
+    configs/pnas_psychophysics.yaml
+    src/psyview/configs/lateral_sensitivity.yaml
+    configs/lateral_sensitivity.yaml
 
-WHY IT CRASHED
---------------
-The previous fixed-row-axes patch accidentally generated two methods at the
-wrong indentation level:
+OPTIONAL:
+    tests/test_declarative_axis_policy.py
 
-    _prepare_plot_with_row_axes(...)
-    _legend_text(...)
+WHAT CHANGES
+============
 
-Python accepted the file as syntactically valid, but they were no longer
-methods of class PsyView. That meant opening a dataset failed when PsyView
-tried to call the new shared-row-axis renderer.
+1. SCIENTIFIC AXIS SEMANTICS LIVE IN YAML
+-----------------------------------------
+The generic renderer still has no idea what "CSF", "PSF", "lateral
+sensitivity", etc. mean.
 
-THIS HOTFIX
------------
-Only corrects that class structure. It keeps the intended features:
+Instead, each known dataset may declare axis semantics against its hierarchy
+columns in `axis_policy:`.
 
-    - fixed x/y ranges across sibling conditions in a hierarchy row
-    - box plots keep categorical/local x but share y across siblings
-    - min/middle/max y ticks
-    - AXES information in the right-hand key
-    - compact breadcrumb hierarchy
-    - all existing lateral + PNAS behavior
+Example from the PNAS configuration:
 
-No empirical data or GitHub repositories are modified.
+    luminance_cd_m2:
+      x:
+        scale: log
+        limits: row
+        rounding: nice
+      y:
+        scale: log
+        limits: row
+        rounding: decades
+        preferred_min: 10
+        preferred_max: 1000
 
-VALIDATION
-----------
-The replacement file was:
-    1. Python syntax compiled
-    2. parsed with Python AST
-    3. checked to confirm redraw(), _prepare_plot_with_row_axes(),
-       _legend_text(), and display_spec() are direct PsyView methods
+The Luminance hierarchy row happens to display CSFs in this adapter, but the
+renderer never tests a title for the word "CSF".
+
+2. CSF Y AXIS
+-------------
+The default PNAS CSF Y axis is now explicitly:
+
+    log scale
+    fixed across sibling luminance conditions in the row
+    decade-rounded
+    soft preferred window 10..1000
+
+"Soft" is crucial.
+
+Examples:
+
+    all CSF data 18..850
+        -> display 10..1000
+
+    a CSF falls to 8
+        -> display expands to 1..1000
+
+    a CSF reaches 1800
+        -> display expands to 10..10000
+
+The preferred range can therefore never clip empirical data.
+
+3. USER CAN CHANGE AXIS SCALE
+-----------------------------
+New keys:
+
+    X   toggle current hierarchy-row X scale
+    Y   toggle current hierarchy-row Y scale
+
+The first press switches away from the configured/current scale:
+
+    configured log -> user linear
+    configured linear -> user log
+
+Press the same key again:
+
+    -> return to dataset/default automatic policy
+
+The override is temporary/in-memory and applies to that hierarchy LEVEL while
+you navigate sibling conditions.
+
+For categorical X axes (such as box plots) X scaling is intentionally not
+changed; PsyView tells the user that linear/log does not apply.
+
+4. RIGHT-HAND AXIS KEY
+----------------------
+The legend continues to show the actual resolved scale, and now also reports
+where it came from:
+
+    Y scale: log (dataset config)
+
+or:
+
+    Y scale: linear (user override)
+
+5. GENERIC CONFIG OPTIONS
+-------------------------
+Each hierarchy-level x/y policy may use:
+
+    scale:
+        auto | linear | log
+
+    limits:
+        row | data
+
+    rounding:
+        auto | nice | decades
+
+    preferred_min:
+        number
+
+    preferred_max:
+        number
+
+`row` means fixed while cycling left/right siblings.
+`data` leaves that axis local to the current plotted data/category.
+
+6. KNOWN DATASET DEFAULTS
+-------------------------
+PNAS:
+    PSF subject view:
+        x log, y linear
+
+    CSF view:
+        x log, y log
+        y preferred 10..1000, decade-rounded
+
+    threshold box:
+        categorical/local x, row-fixed log y
+
+    staircase:
+        linear x, row-fixed log y
+
+Lateral:
+    ISF subject view:
+        x log, y linear
+
+    lateral profile:
+        linear x/y
+
+    threshold box levels:
+        categorical/local x, row-fixed log y
+
+    staircase:
+        linear x, row-fixed log y
+
+7. FUTURE DATASETS
+------------------
+A future adapter can provide its own axis policy without any changes to
+terminal.py, Matplotlib, or the generic plotting machinery.
+
+If no `axis_policy` exists, PsyView continues using each PlotSpec's declared
+scale and the existing generic row-sharing behavior.
+
+NO DATA CHANGES
+===============
+This patch changes display semantics/configuration only. It does not modify
+empirical files, thresholds, sensitivities, fits, exclusions, or GitHub.
 
 RUN
----
+===
     .\run_psyview.bat

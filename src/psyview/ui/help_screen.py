@@ -17,6 +17,8 @@ class HelpScreen(ModalScreen):
             'Home / End  First / last value\n'
             'Enter  Enter child or expand final plot\n'
             'R  Reload from disk\n'
+            'X  Toggle X linear/log (press again = dataset/default)\n'
+            'Y  Toggle Y linear/log (press again = dataset/default)\n'
             'M  Open Matplotlib\n'
             'S  Save PNG\n'
             'F  Fit / hide diagnostic equation fit (where supported)\n'

@@ -3,6 +3,7 @@ dataset:
   adapter: pnas
   title: Intrinsic Organization of Contrast Sensitivity in Human Vision
   citation: 'Archive v1.0.0 DOI: 10.5281/zenodo.22644071; local copy may be a later maintenance revision'
+
 sources:
   psf: data/processed/preferred_frequency.csv
   csf: data/processed/csf_thresholds.csv
@@ -10,11 +11,68 @@ sources:
   trials: data/raw/trials.csv.gz
   reversals: data/raw/staircase_reversals.csv
   curves: data/processed/csf_curves_recomputed.csv
+
 hierarchy:
   - {name: Subject, column: participant_id, source: psf}
   - {name: Luminance, column: luminance_cd_m2, source: psf, units: 'cd/m²'}
   - {name: Spatial frequency, column: spatial_frequency_cpd, source: stairs, units: cpd}
   - {name: Staircase, column: staircase_id, source: stairs}
+
+# Scientific display semantics belong here rather than in the generic renderer.
+#
+# limits: row
+#   Hold an axis fixed while cycling sibling values at this hierarchy level.
+#
+# preferred_min / preferred_max
+#   Soft display bounds. They enlarge a useful viewing window but NEVER clip
+#   data outside it.
+#
+# rounding: decades
+#   On a log axis, round outward to powers of ten.
+axis_policy:
+  participant_id:
+    x:
+      scale: log
+      limits: row
+      rounding: nice
+    y:
+      scale: linear
+      limits: row
+      rounding: nice
+
+  # This hierarchy row displays the CSF for the selected luminance.
+  luminance_cd_m2:
+    x:
+      scale: log
+      limits: row
+      rounding: nice
+    y:
+      scale: log
+      limits: row
+      rounding: decades
+      preferred_min: 10
+      preferred_max: 1000
+
+  # Threshold-distribution box plot. X is categorical/local; Y stays shared.
+  spatial_frequency_cpd:
+    x:
+      scale: auto
+      limits: data
+    y:
+      scale: log
+      limits: row
+      rounding: nice
+
+  staircase_id:
+    x:
+      scale: linear
+      limits: row
+      rounding: nice
+    y:
+      scale: log
+      limits: row
+      rounding: nice
+
 plots:
   participant_id: {source: psf, x: luminance_cd_m2, y: f_pref_mean_cpd}
   luminance_cd_m2: {source: csf, x: spatial_frequency_cpd, y: contrast_sensitivity}

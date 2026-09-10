@@ -3,6 +3,7 @@ dataset:
   adapter: lateral
   title: Lateral Sensitivity and Intrinsic Spatial Frequency
   citation: 'Read-only empirical archive; scientific definitions are taken from the repository data dictionary and methods documentation.'
+
 sources:
   conditions: data/processed/condition_summary.csv
   endpoints: data/processed/isf_endpoints.csv
@@ -11,10 +12,63 @@ sources:
   summary: data/processed/staircase_summary.csv
   trials: data/processed/staircase_trials.csv.gz
   reversals: data/processed/staircase_reversals.csv
+
 hierarchy:
   - {name: Subject, column: participant_id, source: conditions}
   - {name: Luminance, column: luminance_label_cd_m2, source: conditions, units: 'cd/m²'}
   - {name: Position, column: probe_position_deg, source: stairs, units: 'deg'}
   - {name: Experiment, column: experiment, source: stairs}
   - {name: Staircase, column: staircase_id, source: stairs}
+
+axis_policy:
+  participant_id:
+    x:
+      scale: log
+      limits: row
+      rounding: nice
+    y:
+      scale: linear
+      limits: row
+      rounding: nice
+
+  luminance_label_cd_m2:
+    x:
+      scale: linear
+      limits: row
+      rounding: nice
+    y:
+      scale: linear
+      limits: row
+      rounding: nice
+
+  # Position and Experiment levels are threshold-distribution box views.
+  # Their X positions are categorical; Y is logarithmic and fixed by row.
+  probe_position_deg:
+    x:
+      scale: auto
+      limits: data
+    y:
+      scale: log
+      limits: row
+      rounding: nice
+
+  experiment:
+    x:
+      scale: auto
+      limits: data
+    y:
+      scale: log
+      limits: row
+      rounding: nice
+
+  staircase_id:
+    x:
+      scale: linear
+      limits: row
+      rounding: nice
+    y:
+      scale: log
+      limits: row
+      rounding: nice
+
 plots: {}

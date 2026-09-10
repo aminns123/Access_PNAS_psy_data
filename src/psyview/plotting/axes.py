@@ -262,19 +262,19 @@ def axis_policy(spec, axis):
 
 
 
-def shared_axis_limits(specs, axis):
+def shared_axis_limits(specs, axis, policy=None):
     """Return one limit pair encompassing every sibling plot in a row.
 
-    Each sibling first gets its normal local axis policy.  The shared row
-    limits are then the union of those resolved limits.  This preserves the
-    existing readable rounding/padding while guaranteeing that left/right
-    navigation within one hierarchy row never changes the displayed range.
+    The final union can then be enlarged/rounded by an optional declarative
+    axis policy from the dataset YAML.  The policy is presentation metadata;
+    it never clips sibling data.
     """
     resolved = []
+    resolved_scales = []
 
     for spec in specs:
         try:
-            _, limits, _ = axis_policy(
+            scale, limits, _ = axis_policy(
                 spec,
                 axis,
             )
@@ -294,14 +294,109 @@ def shared_axis_limits(specs, axis):
                     float(limits[1]),
                 )
             )
+            resolved_scales.append(scale)
 
     if not resolved:
         return None
 
-    return (
+    limits = (
         min(item[0] for item in resolved),
         max(item[1] for item in resolved),
     )
+
+    # All sibling specs have already had the same declared/user scale applied.
+    scale = (
+        resolved_scales[0]
+        if resolved_scales
+        else 'linear'
+    )
+
+    return apply_declared_limit_policy(
+        limits,
+        scale,
+        policy,
+    )
+
+
+def apply_declared_limit_policy(limits, scale, policy=None):
+    """Expand row limits according to optional declarative display policy.
+
+    `preferred_min` / `preferred_max` are SOFT bounds:
+      - they enlarge the viewing window when useful;
+      - they never clip data already outside that window.
+
+    `rounding` may be:
+      - auto      : keep the already-resolved limits
+      - decades   : round log limits outward to powers of ten
+      - nice      : round outward using readable 1/2/5-style values
+
+    Example for a CSF policy with preferred 10..1000:
+      data 18..850  -> 10..1000
+      data 8..850   -> 1..1000
+      data 18..1800 -> 10..10000
+    """
+    if not policy:
+        return tuple(map(float, limits))
+
+    lo, hi = map(float, limits)
+    rounding = str(
+        policy.get('rounding', 'auto')
+    ).lower()
+
+    preferred_min = policy.get(
+        'preferred_min'
+    )
+    preferred_max = policy.get(
+        'preferred_max'
+    )
+
+    if preferred_min is not None and finite(preferred_min):
+        preferred_min = float(preferred_min)
+        if (
+            scale != 'log'
+            or preferred_min > 0
+        ):
+            lo = min(lo, preferred_min)
+
+    if preferred_max is not None and finite(preferred_max):
+        preferred_max = float(preferred_max)
+        if (
+            scale != 'log'
+            or preferred_max > 0
+        ):
+            hi = max(hi, preferred_max)
+
+    if scale == 'log':
+        if lo <= 0 or hi <= 0:
+            return lo, hi
+
+        if rounding == 'decades':
+            lo = 10.0 ** math.floor(
+                math.log10(lo)
+            )
+            hi = 10.0 ** math.ceil(
+                math.log10(hi)
+            )
+
+        elif rounding == 'nice':
+            lo = _nice_log_floor(lo)
+            hi = _nice_log_ceil(hi)
+
+    elif rounding in ('nice', 'decades'):
+        # "decades" is a log concept; if the user temporarily switches this
+        # configured axis to linear, fall back to ordinary readable linear
+        # rounding rather than applying powers of ten.
+        if hi > lo:
+            step = _nice_linear_step(
+                (hi - lo) / 4.0
+            )
+            lo = math.floor(lo / step) * step
+            hi = math.ceil(hi / step) * step
+
+    if not lo < hi:
+        return tuple(map(float, limits))
+
+    return lo, hi
 
 def anchor_ticks(limits, scale='linear'):
     """Return guaranteed lower / middle / upper display ticks.
