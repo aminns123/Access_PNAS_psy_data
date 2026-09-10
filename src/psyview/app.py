@@ -627,10 +627,38 @@ class PsyView(App):
     
         return spec
 
+    def _restore_keyboard_focus(self):
+        """Return key handling to the app after transient controls/redraws.
+
+        PsyView's hierarchy and View menu are keyboard-state driven rather than
+        widget-focus driven. A dismissed Textual Input/modal can otherwise leave
+        a stale focused control behind on some terminals (notably Windows).
+        Clearing widget focus after the next refresh keeps the app-level
+        bindings active without stealing focus from an open modal.
+        """
+        try:
+            self.screen.set_focus(None)
+        except Exception:
+            logger.debug(
+                'Could not clear transient Textual focus',
+                exc_info=True,
+            )
+
+    def _queue_keyboard_focus_restore(self):
+        try:
+            self.call_after_refresh(
+                self._restore_keyboard_focus
+            )
+        except Exception:
+            logger.debug(
+                'Could not queue keyboard focus restore',
+                exc_info=True,
+            )
+
     def set_busy(self, busy, label='Working…'):
         self.query_one(BusyOverlay).set_busy(busy, label)
 
-    async def redraw(self):
+    async def redraw(self, force_background=False):
         self.plot_generation += 1
         generation = self.plot_generation
         self.set_busy(False)
@@ -657,7 +685,8 @@ class PsyView(App):
             self.fit_edit_mode = False
 
         background_work = (
-            self.analysis.mode == 'interactive'
+            force_background
+            or self.analysis.mode == 'interactive'
             or use_fit
         )
 
@@ -1130,7 +1159,7 @@ class PsyView(App):
             else:
                 self.axis_scale_overrides[(level, axis)] = target
 
-            await self.redraw()
+            await self.redraw(force_background=True)
             return
 
         if key == 'scope':
@@ -1141,7 +1170,7 @@ class PsyView(App):
             else:
                 self.axis_scope_overrides[level] = target
 
-            await self.redraw()
+            await self.redraw(force_background=True)
             return
 
         if key in ('x_min', 'x_max', 'y_min', 'y_max'):
@@ -1162,7 +1191,7 @@ class PsyView(App):
                 self.axis_limit_overrides.pop((level, axis), None)
             self.axis_scope_overrides.pop(level, None)
             self.notify('View overrides reset to dataset defaults.')
-            await self.redraw()
+            await self.redraw(force_background=True)
             return
 
         if key in ('x_min', 'x_max', 'y_min', 'y_max'):
@@ -1186,6 +1215,9 @@ class PsyView(App):
         def receive(result):
             if result is not None:
                 self._receive_axis_limit(axis, bound, result)
+            # The Input lived on a modal screen. Once that screen is dismissed,
+            # explicitly clear any stale Textual focus on the next refresh.
+            self._queue_keyboard_focus_restore()
 
         self.push_screen(AxisLimitScreen(title, current), receive)
 
@@ -1206,7 +1238,7 @@ class PsyView(App):
                 self.axis_limit_overrides[key] = manual
             else:
                 self.axis_limit_overrides.pop(key, None)
-            asyncio.create_task(self.redraw())
+            asyncio.create_task(self.redraw(force_background=True))
             return
 
         value = result.get('value')
@@ -1230,12 +1262,13 @@ class PsyView(App):
             return
 
         self.axis_limit_overrides[key] = candidate
-        asyncio.create_task(self.redraw())
+        asyncio.create_task(self.redraw(force_background=True))
 
     def action_view(self):
         if self.view_focus:
             self.view_focus = False
             self._refresh_right_panel()
+            self._queue_keyboard_focus_restore()
             return
 
         if self.spec is None:
@@ -1248,6 +1281,7 @@ class PsyView(App):
         self._normalize_view_index()
         self.show_analysis()
         self._refresh_right_panel()
+        self._queue_keyboard_focus_restore()
 
     def _legend_text(self, spec):
         from .plotting.axes import (
@@ -1409,6 +1443,8 @@ class PsyView(App):
             f'{spec.notes}'
         )
 
+        self._queue_keyboard_focus_restore()
+
     def show_analysis(self):
         if not hasattr(
             self.adapter,
@@ -1555,7 +1591,7 @@ class PsyView(App):
                 f'(temporary override).'
             )
 
-        await self.redraw()
+        await self.redraw(force_background=True)
 
     async def action_x_scale(self):
         await self._toggle_axis_scale(
@@ -1603,7 +1639,7 @@ class PsyView(App):
         if not self.fit_enabled:
             self.fit_edit_mode = False
 
-        await self.redraw()
+        await self.redraw(force_background=True)
 
     async def action_fit_edit(self):
         if (
@@ -1652,11 +1688,13 @@ class PsyView(App):
         if self.view_focus:
             self.view_focus = False
             self._refresh_right_panel()
+            self._queue_keyboard_focus_restore()
             return
 
         self.analysis_focus = False
         self.fit_edit_mode = False
         self.show_analysis()
+        self._queue_keyboard_focus_restore()
 
     async def change_n(
         self,
@@ -1876,7 +1914,7 @@ class PsyView(App):
                 mode,
                 self.analysis.n_reversals,
             )
-            await self.redraw()
+            await self.redraw(force_background=True)
             return
 
         if (
