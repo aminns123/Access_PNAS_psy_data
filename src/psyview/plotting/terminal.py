@@ -81,17 +81,15 @@ class TerminalPlotRenderer:
                 )
             )
 
-            # IMPORTANT: pass Plotext PHYSICAL data-space limits.
-            #
-            # Plotext applies its own logarithmic transform when the ruler is
-            # built. Pre-transforming limits with log10 here transforms the
-            # scale twice and clips/misplaces the actual data.
-            getattr(
-                plt,
-                axis + 'lim',
-            )(
-                *limits
+            # Plotext 5.3 transforms signals, ticks and helper lines during
+            # build(), but explicit limits are already in axis coordinates.
+            # Keep PlotSpec/policy physical; convert only this backend boundary.
+            bounds = (
+                [math.log10(value) for value in limits]
+                if scale == 'log'
+                else limits
             )
+            getattr(plt, axis + 'lim')(*bounds)
 
             custom_ticks = getattr(
                 spec,

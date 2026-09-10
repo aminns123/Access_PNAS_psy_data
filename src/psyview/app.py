@@ -362,14 +362,8 @@ class PsyView(App):
         spec,
         level,
     ):
-        """Layer YAML/user display choices over an already-valid PlotSpec.
-
-        Crucially this runs AFTER the known-good row limits have been resolved.
-        It never rebuilds sibling plot extents.
-        """
-        from .plotting.axes import (
-            apply_declared_limit_policy,
-        )
+        """Resolve each sibling's display policy before sharing physical limits."""
+        from .plotting.axes import axis_policy, apply_declared_limit_policy
 
         for axis in ('x', 'y'):
             policy = self._axis_config(
@@ -413,59 +407,17 @@ class PsyView(App):
                 target_scale = original_scale
                 source = 'plot default'
 
-            # The known datasets already construct CSF/staircase/etc. with
-            # their correct scientific scales. If a declaration changes scale,
-            # remove the old manual limit so the renderer safely recomputes
-            # the extent in the new coordinate system. This prioritises
-            # visibility over forcing an incompatible old range.
+            # Categorical positions and labels remain local and linear.
+            if axis == 'x' and spec.xticks:
+                continue
+
+            setattr(spec, axis + 'scale', target_scale)
             if target_scale != original_scale:
-                setattr(
-                    spec,
-                    axis + 'scale',
-                    target_scale,
-                )
-                setattr(
-                    spec,
-                    axis + 'lim',
-                    None,
-                )
-            else:
-                setattr(
-                    spec,
-                    axis + 'scale',
-                    target_scale,
-                )
-
-                resolved_limits = getattr(
-                    spec,
-                    axis + 'lim',
-                    None,
-                )
-
-                # Apply preferred/rounded bounds ONLY to an already-resolved
-                # valid row range. Categorical X axes are left alone.
-                if (
-                    resolved_limits is not None
-                    and not (
-                        axis == 'x'
-                        and getattr(
-                            spec,
-                            'xticks',
-                            [],
-                        )
-                    )
-                ):
-                    new_limits = apply_declared_limit_policy(
-                        resolved_limits,
-                        target_scale,
-                        policy,
-                    )
-                    if new_limits is not None:
-                        setattr(
-                            spec,
-                            axis + 'lim',
-                            new_limits,
-                        )
+                setattr(spec, axis + 'lim', None)
+            scale, limits, _ = axis_policy(spec, axis)
+            setattr(spec, axis + 'lim', apply_declared_limit_policy(
+                limits, scale, policy,
+            ))
 
             spec.metadata[
                 f'_{axis}_scale_source'
@@ -485,6 +437,7 @@ class PsyView(App):
         fit_edit_mode,
         parent_filters,
         sibling_values,
+        decorate_axis_policy=None,
     ):
         """Prepare current plot and lock its scale to its hierarchy row.
     
@@ -515,6 +468,9 @@ class PsyView(App):
             fit_edit_mode,
         )
     
+        if decorate_axis_policy is not None:
+            decorate_axis_policy(spec, level)
+
         level_definition = adapter.levels()[level]
         sibling_specs = []
     
@@ -547,6 +503,9 @@ class PsyView(App):
                         False,
                     )
     
+                if decorate_axis_policy is not None and sibling_spec is not spec:
+                    decorate_axis_policy(sibling_spec, level)
+
                 sibling_specs.append(
                     sibling_spec
                 )
@@ -570,7 +529,10 @@ class PsyView(App):
             sibling_specs,
             'y',
         )
-        if shared_y is not None:
+        policies = adapter.config.get('axis_policy', {}).get(
+            level_definition.column, {},
+        )
+        if shared_y is not None and policies.get('y', {}).get('limits') != 'data':
             spec.ylim = shared_y
     
         # Box/categorical plots intentionally keep their x positions local.
@@ -585,7 +547,7 @@ class PsyView(App):
                 sibling_specs,
                 'x',
             )
-            if shared_x is not None:
+            if shared_x is not None and policies.get('x', {}).get('limits') != 'data':
                 spec.xlim = shared_x
     
         spec.metadata[
@@ -724,16 +686,13 @@ class PsyView(App):
                             self.fit_edit_mode,
                             parent_filters,
                             sibling_values,
+                            self._decorate_axis_policy,
                         )
                     )
                     if (
                         generation
                         == self.plot_generation
                     ):
-                        self._decorate_axis_policy(
-                            spec,
-                            level,
-                        )
                         self.display_spec(
                             spec
                         )
@@ -782,10 +741,7 @@ class PsyView(App):
                 False,
                 parent_filters,
                 sibling_values,
-            )
-            self._decorate_axis_policy(
-                spec,
-                level,
+                self._decorate_axis_policy,
             )
             self.display_spec(
                 spec
