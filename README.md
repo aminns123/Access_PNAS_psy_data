@@ -2,6 +2,56 @@
 
 Read-only terminal explorer for the PNAS psychophysics archive.
 
+---
+
+## Quick start
+
+PsyView requires **standard CPython 3.13 (recommended), minimum 3.12**.
+The first launch needs an internet connection so PsyView can create its local
+`.venv` and install the required Python packages. Later unchanged launches can
+run offline.
+
+### Windows
+
+1. Install Python 3.13 from [python.org](https://www.python.org/downloads/windows/).
+2. Download or clone this repository.
+3. Open the extracted/repository folder.
+4. Double-click `run_psyview.bat`, or run:
+
+```bat
+run_psyview.bat
+```
+
+5. When PsyView opens, use the folder browser to select the separate empirical
+   data folder/repository you want to inspect.
+
+### macOS
+
+1. Install the standard Python 3.13 **macOS universal2 installer** from
+   [python.org](https://www.python.org/downloads/macos/).
+2. Download or clone this repository.
+3. Open Terminal and `cd` into the extracted/repository folder.
+4. Run:
+
+```sh
+sh run_psyview.sh
+```
+
+5. On the first launch, allow PsyView to create its local `.venv` and install
+   dependencies.
+6. When PsyView opens, use the folder browser to select the separate empirical
+   data folder/repository you want to inspect.
+
+Do **not** copy the `.venv` folder between Windows and macOS. Each computer
+should create its own local environment.
+
+Once the TUI is open: **Left/Right** changes values, **Up/Down** changes
+hierarchy level, **V** opens View controls, **A** opens Analysis controls,
+**M** opens the current plot in Matplotlib, **S** saves a PNG, **R** reloads,
+**H** opens help, and **Q** quits.
+
+---
+
 ## Running PsyView
 
 Use **standard CPython 3.13 (recommended), minimum 3.12**. The existing Python
