@@ -11,39 +11,36 @@ The first launch needs an internet connection so PsyView can create its local
 `.venv` and install the required Python packages. Later unchanged launches can
 run offline.
 
+The launcher creates or reuses its environment and installs dependencies when
+needed. Normal use requires no separate installer, patch script, pytest, pip
+commands, or development setup.
+
 ### Windows
 
-1. Install Python 3.13 from [python.org](https://www.python.org/downloads/windows/).
-2. Download or clone this repository.
-3. Open the extracted/repository folder.
-4. Double-click `run_psyview.bat`, or run:
+1. Install Python 3.13 from [python.org](https://www.python.org/downloads/windows/),
+   including the Python launcher.
+2. Download and extract this repository (or clone it).
+3. Double-click `run_psyview.bat` in the repository folder.
+4. When PsyView opens, choose the **separate empirical-data folder** in the
+   folder browser.
 
-```bat
-run_psyview.bat
-```
+### macOS/Linux
 
-5. When PsyView opens, use the folder browser to select the separate empirical
-   data folder/repository you want to inspect.
+1. Install compatible Python: standard Python 3.13 from
+   [python.org](https://www.python.org/downloads/macos/) on macOS, or Python
+   3.12+ with `venv`/pip support from your Linux distribution.
+2. Download and extract this repository (or clone it).
+3. Open Terminal in the repository folder and run:
 
-### macOS
+   ```sh
+   sh run_psyview.sh
+   ```
 
-1. Install the standard Python 3.13 **macOS universal2 installer** from
-   [python.org](https://www.python.org/downloads/macos/).
-2. Download or clone this repository.
-3. Open Terminal and `cd` into the extracted/repository folder.
-4. Run:
+4. When PsyView opens, choose the **separate empirical-data folder** in the
+   folder browser.
 
-```sh
-sh run_psyview.sh
-```
-
-5. On the first launch, allow PsyView to create its local `.venv` and install
-   dependencies.
-6. When PsyView opens, use the folder browser to select the separate empirical
-   data folder/repository you want to inspect.
-
-Do **not** copy the `.venv` folder between Windows and macOS. Each computer
-should create its own local environment.
+Keep empirical data separate. Each computer creates its own local environment;
+do not copy `.venv` between computers or operating systems.
 
 Once the TUI is open: **Left/Right** changes values, **Up/Down** changes
 hierarchy level, **V** opens View controls, **A** opens Analysis controls,
@@ -54,8 +51,7 @@ hierarchy level, **V** opens View controls, **A** opens Analysis controls,
 
 ## Running PsyView
 
-Use **standard CPython 3.13 (recommended), minimum 3.12**. The existing Python
-minimum and dependency ranges are unchanged. Windows 10/11, macOS Intel and
+Use **standard CPython 3.13 (recommended), minimum 3.12**. Windows 10/11, macOS Intel and
 Apple Silicon, and Linux use the same Python application. First setup needs
 internet access to install dependencies; later unchanged launches work offline.
 Git is optional: a downloaded ZIP works after extraction. Keep empirical data
@@ -70,7 +66,7 @@ including the Python launcher, then double-click `run_psyview.bat` or run:
 run_psyview.bat
 ```
 
-Windows Terminal is recommended. The existing Windows launcher is retained.
+Windows Terminal is recommended.
 
 ### macOS (Intel or Apple Silicon)
 
@@ -80,20 +76,16 @@ and Apple Silicon (M1/M2/M3/M4 and later ARM64 Macs); Homebrew is not required.
 Open a new Terminal window after installing. Then:
 
 ```sh
-git clone https://github.com/aminns123/Access_PNAS_psy_data.git
-cd Access_PNAS_psy_data
-chmod +x run_psyview.sh
-./run_psyview.sh
+sh run_psyview.sh
 ```
 
-For a ZIP download, `cd` into the extracted folder instead. The `chmod` step is
-needed if the download/checkout did not preserve execute permission; alternatively
-use `sh run_psyview.sh`. Paths containing spaces are supported. The launcher uses
+Run this from the extracted or cloned repository folder. Paths containing spaces
+are supported. The launcher uses
 `.venv/bin/python` directly and creates the environment when needed. To choose a
 particular Python on first setup:
 
 ```sh
-PSYVIEW_PYTHON="/path/to/python3.13" ./run_psyview.sh
+PSYVIEW_PYTHON="/path/to/python3.13" sh run_psyview.sh
 ```
 
 Use a native ARM64 Python/Terminal on Apple Silicon. Do not copy `.venv` between
@@ -114,7 +106,7 @@ Startup opens a keyboard folder browser. Select the external empirical repositor
 or supply paths directly (quote paths with spaces):
 
 ```sh
-./run_psyview.sh --data-root "/Users/name/Research/PNAS data" --export-dir "/Users/name/psyview-exports"
+sh run_psyview.sh --data-root "/Users/name/Research/PNAS data" --export-dir "/Users/name/psyview-exports"
 ```
 
 On Windows pass the same options to `run_psyview.bat` with Windows paths.
@@ -125,26 +117,6 @@ The browser starts at the last dataset's parent, then the project parent/current
 directory, then home. Preferences remain in per-user storage outside the dataset
 (`APPDATA`/`LOCALAPPDATA` on Windows; XDG directories or `~/.config/PsyView` and
 `~/.cache/PsyView/cache` on macOS/Linux).
-
-### Manual installation fallback
-
-Windows (Command Prompt):
-
-```bat
-py -3.13 -m venv .venv
-.venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe -m psyview
-```
-
-macOS/Linux (ensure `python3 --version` is 3.12+):
-
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/python -m psyview
-```
-
-Add `--data-root PATH` to the final command to bypass the browser.
 
 ### Matplotlib windows and terminal fonts
 
@@ -244,12 +216,69 @@ are appended to `psyview.log` in the user temporary directory. Run
 `python -m psyview --debug` for verbose diagnostics. PNG export works without
 a GUI. SciPy is required for interactive fits; archived mode reads saved outputs.
 
-Run `python -m pytest -q` for synthetic unit tests. Real-data integration tests
-require `PSYVIEW_TEST_DATA` pointing to an external dataset; otherwise they skip.
-Tests use
-temporary output folders and do not modify the archive.
+## Lateral equation fitting
+
+At **Subject -> Luminance/profile**, **F** fits or hides the active equation.
+The default is the specialist thesis Eq. B.25 fitter. Press **G** to select a
+custom equation with parameter starting values and bounds, for example:
+
+```text
+Equation:   A*cos(2*pi*f*x+phi)+C
+Parameters: A=0.2[-2,2]; f=3[0.1,20]; phi=0[-pi,pi]; C=0[-2,2]
+```
+
+Press Enter in the equation field, then Enter in the parameter field to apply.
+**F** then fits the custom equation to the current displayed profile. Open **G**
+and press **Ctrl+R** to restore the specialist thesis fitter; **Esc** cancels
+editing. Use explicit multiplication (`*`). The editor validates a restricted
+mathematical expression; it does not execute Python code.
+
+**E** enters/leaves fit-point editing; Left/Right selects a point, Enter toggles
+its exclusion, and **C** clears exclusions for the current luminance. Custom
+functions, parameter settings and fit-point exclusions are session-only.
+Excluded points remain visible. Hidden sibling profiles remain empirical-only
+for shared axes, and fit overlays do not expand automatic limits. Empirical
+files are never modified.
+
+## Development and testing (optional)
+
+These steps are for contributors. To use PsyView, follow Quick start above.
+
+### Manual development environment (optional)
+
+Windows (Command Prompt):
+
+```bat
+py -3.13 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
+.venv\Scripts\python.exe -m psyview
+```
+
+macOS/Linux (ensure `python3 --version` is 3.12+):
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m psyview
+```
+
+Add `--data-root PATH` to the final command to bypass the browser.
+
+### Automated tests
+
+In a development environment, install the test extras once:
+
+```sh
+python -m pip install -e ".[test]"
+python -m pytest -q
+```
+
+The complete suite includes custom-equation, thesis Eq. B.25, launcher, UI and
+axis regression tests. Real-data integration tests require `PSYVIEW_TEST_DATA`
+pointing to an external dataset; otherwise they skip. Tests use temporary output
+folders and do not modify the archive.
 
 Run `python scripts/audit_gui.py` to repeat the 32 real-window integration
 checks. This opens GUI windows and closes each automatically after rendering.
 
-See `AUDIT.md` for verification results and platform limitations.
+See `AUDIT.md` for historical verification results and platform limitations.

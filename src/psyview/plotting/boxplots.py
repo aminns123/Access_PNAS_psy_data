@@ -4,7 +4,6 @@ from __future__ import annotations
 import numpy as np
 
 from ..models import PlotSpec, Series
-from .axes import finite, padded_limits
 
 
 def _categories(frame, category_column, category_order=None):

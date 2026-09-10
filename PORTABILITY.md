@@ -21,7 +21,7 @@ policies and numerical dependencies were not changed for portability.
 | Unicode | Textual/Plotext symbols and render/deepcopy handling retained. Modern UTF-8 terminals and suitable fonts are required for intended appearance. No forced global encoding or symbol substitution. |
 | Analysis startup | Uses `ThreadPoolExecutor`, not multiprocessing/fork. Entry points already have `__main__` guards. Queued work is cancelled at exit; an already-running calculation finishes before interpreter exit. |
 | Line endings/mode | `.sh` forced to LF, `.bat` to CRLF. No bulk renormalization. A Windows working tree cannot reliably record a Unix executable bit without staging; use the documented `chmod +x run_psyview.sh` or `sh run_psyview.sh`. |
-| Docs | README now covers both platforms, manual installation, data paths, Unicode and GUI troubleshooting. Obsolete INSTALL patch-copy instructions replaced. |
+| Docs | README covers Windows, macOS and Linux launchers, data paths, Unicode and GUI troubleshooting. Optional development setup appears separately. |
 
 ## Dependency evidence
 
@@ -62,8 +62,8 @@ Existing launcher tests cover first installation and subsequent offline startup.
 
 The small GitHub Actions matrix installs and smoke-tests on Windows, macOS and
 Linux with Python 3.12/3.13, using synthetic datasets and Agg. It does not open
-a GUI or require an interactive terminal. Existing unrelated broken tests are
-not part of this explicitly selected smoke suite.
+a GUI or require an interactive terminal. It runs an explicitly selected smoke
+suite; the complete local suite is run with `python -m pytest -q`.
 
 Local verification is on Windows with Python 3.13 and a POSIX shell. A physical
 Mac GUI/Terminal session, native Apple Silicon numerical execution, and hosted CI

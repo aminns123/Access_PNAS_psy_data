@@ -41,7 +41,7 @@ class HelpScreen(ModalScreen):
             'With analysis focused: arrows change N; Home/End select range.\n\n'
             'LATERAL FITTING\n'
             'At Subject → Luminance:\n'
-            '  F       fit/hide thesis Eq. B.25\n'
+            '  F       fit/hide the active equation (thesis or custom)\n'
             '  G       select/edit a custom fit function\n'
             '  E       enter/leave fit-point edit mode\n'
             '  ← / →   move the diamond fit-point cursor\n'

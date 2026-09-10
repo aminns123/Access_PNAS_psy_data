@@ -1,5 +1,9 @@
 # External datasets and interactive final-N analysis
 
+Historical implementation audit: dataset-location and verification statements
+below describe that phase, not the current checkout. For current installation
+and usage, see [README.md](README.md); empirical repositories remain separate.
+
 ## Data-location audit
 
 The project already contained a tracked empirical repository snapshot at

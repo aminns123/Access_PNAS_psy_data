@@ -1,8 +1,6 @@
 """Scientific plot specifications for the lateral-sensitivity archive."""
 from __future__ import annotations
 
-import numpy as np
-
 from ..models import PlotSpec, Series
 from .axes import finite
 from .boxplots import grouped_box_plot
