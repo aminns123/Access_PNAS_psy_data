@@ -4,7 +4,7 @@ from copy import deepcopy
 from textual_plotext import PlotextPlot
 
 from ..models import FIT_COLOR
-from .axes import axis_policy, finite, log_ticks, tick_label
+from .axes import axis_policy, anchor_ticks, finite, log_ticks, tick_label
 
 
 class ScientificPlot(PlotextPlot):
@@ -108,12 +108,34 @@ class TerminalPlotRenderer:
                     positions,
                     labels,
                 )
+
+            # Every numeric y-axis explicitly shows its displayed minimum,
+            # visual midpoint and displayed maximum.  This is intentionally
+            # global rather than box-plot-specific.
+            elif axis == 'y':
+                ticks = anchor_ticks(
+                    limits,
+                    scale,
+                )
+                if ticks:
+                    getattr(
+                        plt,
+                        axis + 'ticks',
+                    )(
+                        ticks,
+                        [
+                            tick_label(value)
+                            for value in ticks
+                        ],
+                    )
+
             elif scale == 'log':
                 ticks = log_ticks(limits)
                 getattr(plt, axis + 'ticks')(
                     ticks,
                     [tick_label(v) for v in ticks],
                 )
+
             elif axis == 'x' and spec.xlabel.startswith('Trial'):
                 step = max(
                     1,

@@ -60,6 +60,48 @@ def axis_policy(spec, axis):
     return scale, limits, fallback
 
 
+
+def anchor_ticks(limits, scale='linear'):
+    """Return guaranteed lower / middle / upper display ticks.
+
+    The middle tick is the visual midpoint of the axis:
+      - arithmetic midpoint on a linear scale
+      - geometric midpoint on a logarithmic scale
+
+    These ticks describe the ACTUAL displayed limits, so when a user cycles
+    conditions they can immediately see whether the y-axis scale changed.
+    """
+    lo, hi = map(float, limits)
+
+    if not (
+        finite(lo)
+        and finite(hi)
+        and lo < hi
+    ):
+        return []
+
+    if scale == 'log':
+        if lo <= 0 or hi <= 0:
+            return []
+        middle = math.sqrt(lo * hi)
+    else:
+        middle = (lo + hi) / 2.0
+
+    ticks = [lo, middle, hi]
+
+    # Defensive de-duplication for extremely tiny floating-point ranges.
+    result = []
+    for value in ticks:
+        if not result or not math.isclose(
+            value,
+            result[-1],
+            rel_tol=1e-12,
+            abs_tol=1e-15,
+        ):
+            result.append(value)
+
+    return result
+
 def tick_label(value):
     if value == 0:
         return '0'

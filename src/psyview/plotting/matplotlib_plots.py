@@ -7,7 +7,7 @@ import tempfile
 from dataclasses import asdict
 
 from ..models import PlotSpec, Series, FIT_COLOR
-from .axes import axis_policy, finite, log_ticks, tick_label
+from .axes import axis_policy, anchor_ticks, finite, log_ticks, tick_label
 
 import numpy as np
 
@@ -173,6 +173,31 @@ class MatplotlibPlotRenderer:
                 target.set_major_formatter(
                     FixedFormatter(labels)
                 )
+
+            # Match the TUI: every numeric y-axis carries explicit endpoint
+            # and midpoint labels so scale changes cannot be hidden when the
+            # user cycles conditions.
+            elif axis == 'y':
+                ticks = anchor_ticks(
+                    limits,
+                    scale,
+                )
+                if ticks:
+                    target.set_major_locator(
+                        FixedLocator(ticks)
+                    )
+                    target.set_major_formatter(
+                        FixedFormatter(
+                            [
+                                tick_label(value)
+                                for value in ticks
+                            ]
+                        )
+                    )
+                    if scale == 'log':
+                        target.set_minor_formatter(
+                            NullFormatter()
+                        )
 
             elif scale == 'log':
                 target.set_major_locator(

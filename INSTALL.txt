@@ -1,47 +1,62 @@
-PsyView box-plot y-limit cosmetic patch
-=======================================
+PsyView always-visible y-axis scale ticks
+========================================
 
 REPLACE:
-    src/psyview/plotting/boxplots.py
-    src/psyview/plotting/lateral_plots.py
-    src/psyview/plotting/pnas_plots.py
+    src/psyview/plotting/axes.py
+    src/psyview/plotting/terminal.py
+    src/psyview/plotting/matplotlib_plots.py
 
 OPTIONAL TEST:
-    tests/test_boxplot_threshold_ylim.py
+    tests/test_axis_anchor_ticks.py
 
-CHANGE
-------
-The threshold-distribution box plots no longer inherit the very broad raw
-staircase trial-contrast y-axis range.
+WHAT CHANGES
+------------
+This is a GLOBAL plotting change, not a box-plot special case.
 
-For EACH CURRENT ROW / SELECTION, the box-plot y limits are now calculated
-from the threshold values that are actually visible in that box plot:
+Every ordinary numeric Y AXIS in PsyView now explicitly displays:
 
-    lower limit = current-row minimum threshold - small display margin
-    upper limit = current-row maximum threshold + small display margin
+    displayed minimum
+    displayed middle
+    displayed maximum
 
-Because these contrast axes are normally logarithmic, PsyView uses its existing
-log-aware padded_limits() rule with a 7% margin in log space. This gives a
-small proportional gap below the minimum and above the maximum without
-distorting the log axis.
+For a linear y-axis:
+    middle = (min + max) / 2
 
-Included AND excluded threshold points are considered when setting the limits,
-because excluded red-x points remain visible and should never be clipped.
+For a logarithmic y-axis:
+    middle = sqrt(min * max)
 
-This applies through the SAME generic grouped_box_plot helper to:
-    - lateral Position side-by-side boxes
-    - lateral Experiment single box
-    - PNAS/CSF Spatial-frequency single box
-    - future adapters using grouped_box_plot
+The latter is the true visual midpoint of a log axis.
 
-The actual box statistics are unchanged:
-    Q1-Q3
-    median
-    observed min-max whiskers
-    individual thresholds
-    arithmetic-mean diamond
+WHY
+---
+Previously, Plotext/Matplotlib could choose or thin major ticks differently as
+the y-range changed. On some tight ranges this made labels appear/disappear,
+which made it hard to tell whether two successive conditions were using the
+same numerical scale.
 
-No data or analysis calculations are changed.
+Now the user can always read the actual displayed scale from three anchored
+labels.
+
+SCOPE
+-----
+Because the policy lives in the shared renderer/axis layer it applies to:
+
+    lateral sensitivity profiles
+    lateral threshold box plots
+    PNAS/CSF plots
+    PNAS threshold box plots
+    staircase trajectories
+    PSF/ISF plots
+    future PlotSpec-based adapters
+
+Custom categorical/user-specified ticks still take priority.
+
+X-axis behaviour is otherwise unchanged.
+
+TUI and Matplotlib use the same policy.
+
+No scientific calculations, thresholds, fits, data, or axis limits are changed.
+Only the major y-axis tick labels are made deterministic and persistent.
 
 RUN
 ---
