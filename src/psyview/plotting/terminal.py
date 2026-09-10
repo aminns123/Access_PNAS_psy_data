@@ -64,10 +64,12 @@ class TerminalPlotRenderer:
         plt.title(spec.title)
 
         display_scales = {}
+        display_limits = {}
 
         for axis in ('x', 'y'):
             scale, limits, fallback = axis_policy(spec, axis)
             display_scales[axis] = scale
+            display_limits[axis] = limits
 
             getattr(plt, axis + 'scale')(scale)
             getattr(plt, axis + 'label')(
@@ -79,12 +81,17 @@ class TerminalPlotRenderer:
                 )
             )
 
-            bounds = (
-                [math.log10(v) for v in limits]
-                if scale == 'log'
-                else limits
+            # IMPORTANT: pass Plotext PHYSICAL data-space limits.
+            #
+            # Plotext applies its own logarithmic transform when the ruler is
+            # built. Pre-transforming limits with log10 here transforms the
+            # scale twice and clips/misplaces the actual data.
+            getattr(
+                plt,
+                axis + 'lim',
+            )(
+                *limits
             )
-            getattr(plt, axis + 'lim')(*bounds)
 
             custom_ticks = getattr(
                 spec,
@@ -170,13 +177,48 @@ class TerminalPlotRenderer:
                 return FIT_COLOR
             return series.color
 
+        def valid_coordinate(
+            value,
+            axis,
+        ):
+            if not finite(value):
+                return False
+
+            value = float(value)
+
+            return not (
+                display_scales[axis] == 'log'
+                and value <= 0
+            )
+
+        def valid_point(
+            x_value,
+            y_value,
+        ):
+            return (
+                valid_coordinate(
+                    x_value,
+                    'x',
+                )
+                and valid_coordinate(
+                    y_value,
+                    'y',
+                )
+            )
+
         # Measurements remain visible over uncertainty/trajectory lines.
         for series in sorted(
             spec.series,
             key=lambda s: s.kind == 'scatter',
         ):
             if series.kind == 'vline':
-                if series.x and finite(series.x[0]):
+                if (
+                    series.x
+                    and valid_coordinate(
+                        series.x[0],
+                        'x',
+                    )
+                ):
                     plt.vertical_line(
                         series.x[0],
                         color=display_color(series),
@@ -184,7 +226,13 @@ class TerminalPlotRenderer:
                 continue
 
             if series.kind == 'hline':
-                if series.y and finite(series.y[0]):
+                if (
+                    series.y
+                    and valid_coordinate(
+                        series.y[0],
+                        'y',
+                    )
+                ):
                     plt.horizontal_line(
                         series.y[0],
                         color=display_color(series),
@@ -193,13 +241,45 @@ class TerminalPlotRenderer:
 
             # Heavy, exactly-centred terminal uncertainty intervals.
             if _is_vertical_interval(series):
-                x_value = float(series.x[0])
+                x_value = float(
+                    series.x[0]
+                )
+
+                if not valid_coordinate(
+                    x_value,
+                    'x',
+                ):
+                    continue
+
+                lo, hi = sorted(
+                    (
+                        float(series.y[0]),
+                        float(series.y[1]),
+                    )
+                )
+
+                if display_scales['y'] == 'log':
+                    if hi <= 0:
+                        continue
+
+                    lo = max(
+                        lo,
+                        float(
+                            display_limits['y'][0]
+                        ),
+                    )
+
+                    if lo <= 0 or lo > hi:
+                        continue
+
                 y_values = _interval_samples(
-                    series.y[0],
-                    series.y[1],
+                    lo,
+                    hi,
                     display_scales['y'],
                 )
-                x_values = [x_value] * len(y_values)
+                x_values = [
+                    x_value
+                ] * len(y_values)
 
                 plt.scatter(
                     x_values,
@@ -209,9 +289,6 @@ class TerminalPlotRenderer:
                     marker='┃',
                 )
 
-                lo, hi = sorted(
-                    (float(series.y[0]), float(series.y[1]))
-                )
                 plt.scatter(
                     [x_value, x_value],
                     [lo, hi],
@@ -223,8 +300,14 @@ class TerminalPlotRenderer:
             if series.x:
                 points = [
                     (x, y)
-                    for x, y in zip(series.x, series.y)
-                    if finite(x) and finite(y)
+                    for x, y in zip(
+                        series.x,
+                        series.y,
+                    )
+                    if valid_point(
+                        x,
+                        y,
+                    )
                 ]
                 if points:
                     x, y = map(list, zip(*points))

@@ -208,58 +208,139 @@ def nice_y_limits(values, scale='linear'):
     return lower, upper
 
 def axis_policy(spec, axis):
+    """Resolve scale and limits in PHYSICAL data coordinates.
+
+    For logarithmic axes, non-positive series values are not valid log
+    coordinates. They are ignored for log-limit calculation rather than
+    forcing an otherwise valid positive plot back to linear.
+
+    We only fall back to linear when there are no positive values available
+    for a requested log axis.
+    """
     values = [
-        value
+        float(value)
         for series in spec.series
         for value in getattr(series, axis)
         if finite(value)
     ]
 
-    scale = getattr(spec, axis + 'scale')
-    override = getattr(spec, axis + 'lim', None)
+    requested_scale = getattr(
+        spec,
+        axis + 'scale',
+    )
+
+    override = getattr(
+        spec,
+        axis + 'lim',
+        None,
+    )
 
     override_values = (
-        [float(value) for value in override if finite(value)]
+        [
+            float(value)
+            for value in override
+            if finite(value)
+        ]
         if override is not None
         else []
     )
 
-    fallback = (
-        scale == 'log'
-        and any(
-            value <= 0
-            for value in values + override_values
-        )
-    )
-    if fallback:
-        scale = 'linear'
-
-    if (
-        override is not None
-        and len(override_values) == 2
+    valid_override = (
+        len(override_values) == 2
         and override_values[0] < override_values[1]
-    ):
-        limits = tuple(override_values)
+    )
 
+    if requested_scale == 'log':
+        positive_values = [
+            value
+            for value in values
+            if value > 0
+        ]
+
+        positive_override = (
+            valid_override
+            and override_values[0] > 0
+            and override_values[1] > 0
+        )
+
+        # Keep the scientifically requested logarithmic scale whenever there
+        # is something positive to plot. A negative tail of an auxiliary fit
+        # or helper curve must not turn a CSF into a linear-axis plot.
+        if positive_override:
+            return (
+                'log',
+                tuple(override_values),
+                False,
+            )
+
+        if positive_values:
+            limits = (
+                nice_y_limits(
+                    positive_values,
+                    'log',
+                )
+                if axis == 'y'
+                else padded_limits(
+                    positive_values,
+                    'log',
+                )
+            )
+            return (
+                'log',
+                limits,
+                False,
+            )
+
+        # A log view is impossible only when the selected axis contains no
+        # positive coordinates at all.
+        scale = 'linear'
+        fallback = True
+
+        if valid_override:
+            limits = tuple(
+                override_values
+            )
+        elif axis == 'y':
+            limits = nice_y_limits(
+                values,
+                'linear',
+            )
+        else:
+            limits = padded_limits(
+                values,
+                'linear',
+            )
+
+        return (
+            scale,
+            limits,
+            fallback,
+        )
+
+    # Ordinary linear path.
+    scale = 'linear'
+    fallback = False
+
+    if valid_override:
+        limits = tuple(
+            override_values
+        )
     elif axis == 'y':
-        # Y limits are always derived from the values visible in THIS plot
-        # row/selection and rounded outward to readable limits.
         limits = nice_y_limits(
             values,
             scale,
         )
-
     else:
-        # Preserve the existing x-axis policy unless an adapter explicitly
-        # provides xlim.
         limits = padded_limits(
             values,
             scale,
         )
 
-    return scale, limits, fallback
-
-
+    return (
+        scale,
+        limits,
+        fallback,
+    )
 
 
 def shared_axis_limits(specs, axis):

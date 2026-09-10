@@ -1,67 +1,107 @@
-PsyView declarative-axis VISIBILITY FIX
-======================================
+PsyView log-axis rendering fix
+==============================
 
-This patch deliberately restores the last row-axis implementation that you
-confirmed displayed all plots correctly, then adds the YAML behaviour as a
-small post-processing layer.
-
-REPLACE:
-    src/psyview/app.py
+REPLACE ONLY:
     src/psyview/plotting/axes.py
-    src/psyview/data/config.py
-    src/psyview/ui/help_screen.py
-    src/psyview/configs/pnas_psychophysics.yaml
-    configs/pnas_psychophysics.yaml
-    src/psyview/configs/lateral_sensitivity.yaml
-    configs/lateral_sensitivity.yaml
+    src/psyview/plotting/terminal.py
 
-OPTIONAL:
-    tests/test_declarative_axis_visibility_fix.py
+Do NOT replace app.py or the YAML files again.
 
-IMPORTANT FIX
--------------
-The failed versions replaced the proven row-axis calculation with a new
-sibling/raw-scale pipeline. That was too invasive.
+WHAT WAS ACTUALLY WRONG
+-----------------------
+The screenshots made the bug unambiguous.
 
-This version DOES NOT replace it.
+PsyView's terminal renderer did this on a log axis:
 
-The sequence is now:
+    limits in real data units
+        -> log10(limits)
+        -> Plotext.xlim / Plotext.ylim
 
-    existing plot
-      -> existing known-good shared row limits
-      -> optional YAML scale/rounding/preferred bounds
-      -> renderer
+But Plotext's log ruler already performs the logarithmic transform internally.
+The limits were therefore being supplied in the wrong coordinate system.
 
-The YAML layer never recalculates all sibling extents itself.
+That explains every screenshot:
 
-If a YAML/user scale would actually CHANGE a PlotSpec from linear to log (or
-vice versa), PsyView clears that axis's old manual limit and lets the renderer
-recalculate safely. This prevents a limit calculated in one scale from being
-used as though it belonged to another.
+1. PSF
+   legend says X = 5 .. 1000
+   renderer actually gave Plotext about 0.70 .. 3
 
-PNAS CSF DEFAULT
+   real luminances are 10 .. 403, so essentially all data were outside the
+   numerical window and disappeared.
+
+2. CSF
+   legend says X = 0.05 .. 100
+   renderer actually gave Plotext about -1.30 .. 2
+
+   only spatial frequencies <= about 2 remained visible, exactly as shown.
+
+3. Threshold box
+   legend says Y = 0.002 .. 0.02
+   renderer actually gave Plotext about -2.70 .. -1.70
+
+   thresholds around 0.004 were outside that raw numerical interval, so the
+   box vanished.
+
+4. Staircase
+   legend says Y = 0.001 .. 1
+   renderer actually gave Plotext -3 .. 0
+
+   contrasts around 0.03 then landed close to the top of the wrong numerical
+   range, matching the screenshot.
+
+THE FIX
+-------
+TerminalPlotRenderer now passes physical limits directly:
+
+    Plotext.xlim(5, 1000)
+    Plotext.ylim(10, 1000)
+
+and lets Plotext perform the log mapping itself.
+
+SECOND BUG FIXED
 ----------------
-Still declarative:
+The CSF screenshot also showed:
 
-    scale: log
-    limits: row
-    rounding: decades
-    preferred_min: 10
-    preferred_max: 1000
+    Y scale: linear (dataset config)
 
-So, when compatible with the data:
+despite the YAML declaring log.
 
-    18..850  -> 10..1000
-    8..850   -> 1..1000
-    18..1800 -> 10..10000
+That happened because axis_policy changed an entire requested log axis to
+linear if ANY series contained a zero/negative value. An auxiliary/helper
+curve can have a non-positive tail even though all empirical CSF points are
+positive.
 
-X / Y
------
-X toggles a numeric X axis between the current scale and the alternative.
-Y does the same for Y.
+New rule:
 
-Pressing the same key again returns to dataset/default.
+    requested log + any positive plottable values
+        -> remain log
+        -> non-positive coordinates are omitted from the terminal log plot
 
-Categorical box-plot X axes are not toggled.
+    requested log + no positive values whatsoever
+        -> fall back to linear
 
-No empirical data, thresholds, fits, or repositories are changed.
+This keeps CSF scientifically logarithmic without allowing an invalid helper
+point to destroy the scale.
+
+WHAT STAYS UNCHANGED
+--------------------
+- fixed x/y ranges across sibling conditions in each hierarchy row
+- PNAS CSF YAML: log x, log y, preferred 10..1000, decade expansion
+- box plots: local categorical x, shared y
+- min/middle/max y labels
+- right-hand AXES description
+- X/Y user scale controls
+- threshold/fit/error calculations
+- empirical data
+- GitHub repositories
+
+VALIDATION
+----------
+The patch includes regression tests for:
+- PSF shared log x range 5..1000 staying in physical coordinates
+- a CSF remaining log when an auxiliary curve contains a negative tail
+- fallback to linear only when a requested log axis has no positive values
+
+RUN
+---
+    .\run_psyview.bat
