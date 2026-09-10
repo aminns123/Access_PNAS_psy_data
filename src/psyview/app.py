@@ -526,6 +526,11 @@ class PsyView(App):
         return '━━'
 
     def _legend_text(self, spec):
+        from .plotting.axes import (
+            axis_policy,
+            tick_label,
+        )
+
         entries = []
         seen = set()
 
@@ -551,26 +556,52 @@ class PsyView(App):
                 )
             )
 
-        if not entries:
-            return 'KEY\n\n(no labelled series)'
+        _, y_limits, _ = axis_policy(
+            spec,
+            'y',
+        )
+        y_scale, _, _ = axis_policy(
+            spec,
+            'y',
+        )
 
-        lines = ['KEY', '']
+        lines = [
+            'AXES',
+            '',
+            f'X: {spec.xlabel or "not specified"}',
+            f'Y: {spec.ylabel or "not specified"}',
+            (
+                'Y range: '
+                f'{tick_label(y_limits[0])} → '
+                f'{tick_label(y_limits[1])}'
+            ),
+            f'Y scale: {y_scale}',
+            '',
+            'KEY',
+            '',
+        ]
+
         wrap_width = 27
 
-        for symbol, label in entries:
-            wrapped = textwrap.wrap(
-                label,
-                width=wrap_width,
-            ) or ['']
-
+        if not entries:
             lines.append(
-                f'{symbol:<3}{wrapped[0]}'
+                '(no labelled series)'
             )
-            for continuation in wrapped[1:]:
+        else:
+            for symbol, label in entries:
+                wrapped = textwrap.wrap(
+                    label,
+                    width=wrap_width,
+                ) or ['']
+
                 lines.append(
-                    f'   {continuation}'
+                    f'{symbol:<3}{wrapped[0]}'
                 )
-            lines.append('')
+                for continuation in wrapped[1:]:
+                    lines.append(
+                        f'   {continuation}'
+                    )
+                lines.append('')
 
         return '\n'.join(lines).rstrip()
 

@@ -1,62 +1,90 @@
-PsyView always-visible y-axis scale ticks
-========================================
+PsyView: row-local nice y limits + guaranteed axis labels in legend
+===================================================================
 
 REPLACE:
     src/psyview/plotting/axes.py
-    src/psyview/plotting/terminal.py
-    src/psyview/plotting/matplotlib_plots.py
+    src/psyview/plotting/boxplots.py
+    src/psyview/app.py
 
-OPTIONAL TEST:
-    tests/test_axis_anchor_ticks.py
+OPTIONAL:
+    tests/test_nice_row_y_limits.py
 
-WHAT CHANGES
-------------
-This is a GLOBAL plotting change, not a box-plot special case.
+1. Y LIMITS ARE NOW BASED ON THE CURRENT ROW
+--------------------------------------------
+This is a GLOBAL rule, not a CSF-only or box-plot-only rule.
 
-Every ordinary numeric Y AXIS in PsyView now explicitly displays:
+For every plot, PsyView looks at the y values actually present in the current
+row/selection and chooses readable outward limits.
 
-    displayed minimum
-    displayed middle
-    displayed maximum
+Examples:
 
-For a linear y-axis:
-    middle = (min + max) / 2
+    CSF sensitivities:
+        actual data roughly 18 ... 730
+        displayed y range -> 10 ... 1000   (log)
 
-For a logarithmic y-axis:
-    middle = sqrt(min * max)
+    staircase-threshold box:
+        actual thresholds 0.023 ... 0.036
+        displayed y range -> 0.02 ... 0.05 (log)
 
-The latter is the true visual midpoint of a log axis.
+    linear lateral profile:
+        limits are rounded just outside the current min/max using readable
+        linear steps.
 
-WHY
----
-Previously, Plotext/Matplotlib could choose or thin major ticks differently as
-the y-range changed. On some tight ranges this made labels appear/disappear,
-which made it hard to tell whether two successive conditions were using the
-same numerical scale.
+The rule is deliberately row-local. Therefore, when you cycle conditions, the
+visible y-range changes only if that row's data require a different range.
 
-Now the user can always read the actual displayed scale from three anchored
-labels.
+2. LOG AXIS RULE
+----------------
+For broad log ranges (such as many CSFs), PsyView uses surrounding powers of
+ten. This gives familiar scales such as:
 
-SCOPE
------
-Because the policy lives in the shared renderer/axis layer it applies to:
+    1 -> 100
+    10 -> 1000
+    100 -> 10000
 
-    lateral sensitivity profiles
-    lateral threshold box plots
-    PNAS/CSF plots
-    PNAS threshold box plots
-    staircase trajectories
-    PSF/ISF plots
-    future PlotSpec-based adapters
+For tighter log ranges (such as threshold distributions), it uses the
+readable 1 / 2 / 5 sequence so the box plot does not become excessively broad:
 
-Custom categorical/user-specified ticks still take priority.
+    0.023 ... 0.036 -> 0.02 ... 0.05
 
-X-axis behaviour is otherwise unchanged.
+3. MIN / MIDDLE / MAX TICKS
+---------------------------
+The previous patch's guaranteed y-axis min / middle / max tick labels remains
+in force. The new limits feed directly into that shared tick policy.
 
-TUI and Matplotlib use the same policy.
+So the user can always read the actual scale and tell whether it changed
+between conditions.
 
-No scientific calculations, thresholds, fits, data, or axis limits are changed.
-Only the major y-axis tick labels are made deterministic and persistent.
+4. X AND Y AXIS MEANINGS ARE ALWAYS IN THE RIGHT-HAND LEGEND
+-------------------------------------------------------------
+The right-hand panel now begins with, for example:
+
+    AXES
+
+    X: Spatial frequency (cpd)
+    Y: Contrast sensitivity (1 / normalized source contrast)
+    Y range: 10 -> 1000
+    Y scale: log
+
+    KEY
+    ...
+
+This is intentionally redundant with the drawn axis labels. Terminal plots can
+occasionally have too little physical room for long labels, but the scientific
+meaning of X and Y is now always visible in the key panel.
+
+This applies to every PlotSpec-based dataset/adapter, including future ones.
+
+5. NO ANALYSIS CHANGES
+----------------------
+This patch changes presentation only:
+    - no thresholds
+    - no sensitivities
+    - no fitting
+    - no error calculations
+    - no empirical files
+
+are altered.
 
 RUN
 ---

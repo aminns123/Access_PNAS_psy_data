@@ -45,10 +45,9 @@ def grouped_box_plot(
     Box = Q1-Q3, centre line = median, whiskers = observed min-max.
     The individual observations and arithmetic mean are retained explicitly.
 
-    The y-axis is local to the values in the current grouped row: its lower
-    and upper limits are the minimum and maximum plotted values with a small
-    7% display margin. This makes changes in threshold distributions easy to
-    see while retaining all included and excluded observations.
+    The shared renderer derives the y-axis from the values in the current
+    grouped row and rounds the limits outward to readable values. This is the
+    same y-limit policy used by every PsyView plot.
     """
     if category_column not in frame:
         raise ValueError(f'Missing category column: {category_column}')
@@ -67,36 +66,9 @@ def grouped_box_plot(
 
     effective_scale = yscale
 
-    # Keep each box-plot row visually local to the thresholds it is actually
-    # summarising.  Use every finite plotted threshold (included + excluded)
-    # so no visible point can be clipped.  The shared padded_limits policy
-    # supplies the small amount of headroom/footroom requested by the UI.
-    row_values = (
-        frame[value_column]
-        .to_numpy(dtype=float)
-    )
-    row_values = row_values[
-        np.isfinite(row_values)
-    ]
-
-    if effective_scale == 'log':
-        positive = row_values[
-            row_values > 0
-        ]
-        if len(positive):
-            row_values = positive
-        else:
-            effective_scale = 'linear'
-
-    ylim = (
-        padded_limits(
-            row_values,
-            effective_scale,
-            fraction=.07,
-        )
-        if len(row_values)
-        else None
-    )
+    # Do not pin a box-plot-specific ylim here. The shared axis policy now
+    # derives readable row-local y limits for every PlotSpec, including this
+    # one, from the values actually plotted in the current selection.
 
     spec = PlotSpec(
         title,
@@ -112,7 +84,6 @@ def grouped_box_plot(
         ),
         metadata=dict(metadata or {}),
         xlim=(0.45, len(categories) + 0.55),
-        ylim=ylim,
         xticks=[
             (float(index), str(category))
             for index, category in enumerate(categories, start=1)
@@ -303,9 +274,8 @@ def grouped_box_plot(
 
     spec.metadata['Box-plot groups'] = summary
 
-    if ylim is not None:
-        spec.metadata['Y-axis basis'] = (
-            'current-row threshold min/max with 7% padding'
-        )
+    spec.metadata['Y-axis basis'] = (
+        'shared current-row nice-limit policy'
+    )
 
     return spec

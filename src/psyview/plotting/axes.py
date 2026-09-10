@@ -24,6 +24,189 @@ def padded_limits(values, scale='linear', fraction=.07):
     return lo - margin, hi + margin
 
 
+
+def _nice_linear_step(raw_step):
+    """Round a positive linear step to a readable 1/2/2.5/5/10 sequence."""
+    raw_step = float(raw_step)
+    if not finite(raw_step) or raw_step <= 0:
+        return 1.0
+
+    exponent = math.floor(math.log10(raw_step))
+    fraction = raw_step / (10.0 ** exponent)
+
+    for candidate in (1.0, 2.0, 2.5, 5.0, 10.0):
+        if fraction <= candidate:
+            return candidate * (10.0 ** exponent)
+
+    return 10.0 ** (exponent + 1)
+
+
+def _nice_log_floor(value):
+    """Largest readable 1/2/5 × 10^n value not above value."""
+    value = float(value)
+    exponent = math.floor(math.log10(value))
+
+    candidates = [
+        multiplier * (10.0 ** exponent)
+        for multiplier in (1.0, 2.0, 5.0)
+    ]
+
+    valid = [
+        candidate
+        for candidate in candidates
+        if candidate <= value * (1.0 + 1e-12)
+    ]
+
+    if valid:
+        return max(valid)
+
+    return 5.0 * (10.0 ** (exponent - 1))
+
+
+def _nice_log_ceil(value):
+    """Smallest readable 1/2/5 × 10^n value not below value."""
+    value = float(value)
+    exponent = math.floor(math.log10(value))
+
+    candidates = [
+        multiplier * (10.0 ** exponent)
+        for multiplier in (1.0, 2.0, 5.0, 10.0)
+    ]
+
+    valid = [
+        candidate
+        for candidate in candidates
+        if candidate >= value * (1.0 - 1e-12)
+    ]
+
+    if valid:
+        return min(valid)
+
+    return 10.0 ** (exponent + 1)
+
+
+def nice_y_limits(values, scale='linear'):
+    """Readable outward limits based only on the CURRENT plot row.
+
+    Linear axes:
+        use a small data-relative margin, then round outward using a readable
+        1/2/2.5/5 × 10^n interval.
+
+    Log axes:
+        for broad ranges, use surrounding powers of ten (e.g. CSF 10–1000);
+        for tighter ranges, use surrounding 1/2/5 × 10^n values (e.g.
+        threshold contrasts 0.02–0.05).
+
+    This makes condition-to-condition scale changes explicit without using a
+    global dataset range.
+    """
+    values = [
+        float(value)
+        for value in values
+        if finite(value)
+    ]
+
+    if not values:
+        return (
+            (1.0, 10.0)
+            if scale == 'log'
+            else (0.0, 1.0)
+        )
+
+    lo = min(values)
+    hi = max(values)
+
+    if scale == 'log':
+        positive = [
+            value
+            for value in values
+            if value > 0
+        ]
+
+        if not positive:
+            return nice_y_limits(values, 'linear')
+
+        lo = min(positive)
+        hi = max(positive)
+
+        if math.isclose(
+            lo,
+            hi,
+            rel_tol=1e-12,
+            abs_tol=0.0,
+        ):
+            lower = _nice_log_floor(lo / 1.12)
+            upper = _nice_log_ceil(hi * 1.12)
+            if lower >= upper:
+                lower = lo / 1.5
+                upper = hi * 1.5
+            return lower, upper
+
+        decades = math.log10(hi / lo)
+
+        # Broad log rows (especially CSFs) read most naturally using decade
+        # boundaries: e.g. 17..730 -> 10..1000.
+        if decades >= 0.75:
+            lower = 10.0 ** math.floor(math.log10(lo))
+            upper = 10.0 ** math.ceil(math.log10(hi))
+
+            # If both extrema happen to sit exactly on those boundaries, keep
+            # the readable boundaries rather than expanding by a whole decade.
+            return lower, upper
+
+        # Tight log rows (e.g. four staircase thresholds) stay local while
+        # using human-readable bounds.
+        lower_probe = lo * 0.95
+        upper_probe = hi * 1.05
+
+        lower = _nice_log_floor(lower_probe)
+        upper = _nice_log_ceil(upper_probe)
+
+        if lower >= lo:
+            lower = _nice_log_floor(lo * 0.9)
+        if upper <= hi:
+            upper = _nice_log_ceil(hi * 1.1)
+
+        return lower, upper
+
+    # Linear row-local limits.
+    if math.isclose(
+        lo,
+        hi,
+        rel_tol=1e-12,
+        abs_tol=1e-15,
+    ):
+        reference = max(abs(lo), 1.0)
+        raw_half_span = reference * 0.08
+        step = _nice_linear_step(raw_half_span)
+        return lo - step, hi + step
+
+    span = hi - lo
+    padded_lo = lo - 0.05 * span
+    padded_hi = hi + 0.05 * span
+
+    step = _nice_linear_step(
+        (padded_hi - padded_lo) / 4.0
+    )
+
+    lower = math.floor(
+        padded_lo / step
+    ) * step
+    upper = math.ceil(
+        padded_hi / step
+    ) * step
+
+    if math.isclose(lower, upper):
+        upper = lower + step
+
+    # Avoid negative zero in labels/metadata.
+    if math.isclose(lower, 0.0, abs_tol=1e-15):
+        lower = 0.0
+    if math.isclose(upper, 0.0, abs_tol=1e-15):
+        upper = 0.0
+
+    return lower, upper
+
 def axis_policy(spec, axis):
     values = [
         value
@@ -43,7 +226,10 @@ def axis_policy(spec, axis):
 
     fallback = (
         scale == 'log'
-        and any(value <= 0 for value in values + override_values)
+        and any(
+            value <= 0
+            for value in values + override_values
+        )
     )
     if fallback:
         scale = 'linear'
@@ -54,8 +240,22 @@ def axis_policy(spec, axis):
         and override_values[0] < override_values[1]
     ):
         limits = tuple(override_values)
+
+    elif axis == 'y':
+        # Y limits are always derived from the values visible in THIS plot
+        # row/selection and rounded outward to readable limits.
+        limits = nice_y_limits(
+            values,
+            scale,
+        )
+
     else:
-        limits = padded_limits(values, scale)
+        # Preserve the existing x-axis policy unless an adapter explicitly
+        # provides xlim.
+        limits = padded_limits(
+            values,
+            scale,
+        )
 
     return scale, limits, fallback
 
