@@ -1,4 +1,5 @@
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Static, Footer
 from textual_plotext import PlotextPlot
@@ -110,22 +111,22 @@ class PsyView(App):
         ('right', 'next', 'Next'),
         ('down', 'child', 'Child'),
         ('up', 'parent', 'Parent'),
-        ('home', 'first', 'First'),
-        ('end', 'last', 'Last'),
+        Binding('home', 'first', 'First', show=False),
+        Binding('end', 'last', 'Last', show=False),
         ('enter', 'enter', 'Open'),
-        ('r', 'reload', 'Reload'),
-        ('m', 'matplotlib', 'Matplotlib'),
-        ('s', 'save', 'Save PNG'),
-        ('f', 'fit', 'Fit'),
-        ('e', 'fit_edit', 'Fit points'),
-        ('c', 'clear_fit', 'Clear fit exclusions'),
-        ('h', 'help', 'Help'),
-        ('question_mark', 'help', 'Help'),
-        ('q', 'quit', 'Quit'),
         ('a', 'analysis', 'Analysis'),
         ('x', 'x_scale', 'X scale'),
         ('y', 'y_scale', 'Y scale'),
-        ('escape', 'hierarchy_focus', 'Hierarchy'),
+        ('r', 'reload', 'Reload'),
+        ('m', 'matplotlib', 'Matplotlib'),
+        ('s', 'save', 'Save PNG'),
+        Binding('f', 'fit', 'Fit', show=False),
+        Binding('e', 'fit_edit', 'Fit points', show=False),
+        Binding('c', 'clear_fit', 'Clear fit exclusions', show=False),
+        ('h', 'help', 'Help'),
+        Binding('question_mark', 'help', 'Help', show=False),
+        ('q', 'quit', 'Quit'),
+        Binding('escape', 'hierarchy_focus', 'Hierarchy', show=False),
     ]
 
     def __init__(self, adapter, export_dir=None):
@@ -397,6 +398,12 @@ class PsyView(App):
                 )
             )
 
+            # A manual log request must not hide nonpositive empirical content
+            # when navigating to a different row. Dataset log defaults retain
+            # their existing scientific policy.
+            if override == 'log' and not spec.metadata.get('_log_available', {}).get(axis, True):
+                override = None
+
             if override in (
                 'linear',
                 'log',
@@ -474,9 +481,6 @@ class PsyView(App):
             fit_edit_mode,
         )
     
-        if decorate_axis_policy is not None:
-            decorate_axis_policy(spec, level)
-
         level_definition = adapter.levels()[level]
         sibling_specs = []
     
@@ -509,9 +513,6 @@ class PsyView(App):
                         False,
                     )
     
-                if decorate_axis_policy is not None and sibling_spec is not spec:
-                    decorate_axis_policy(sibling_spec, level)
-
                 sibling_specs.append(
                     sibling_spec
                 )
@@ -529,14 +530,29 @@ class PsyView(App):
     
         from .plotting.axes import (
             shared_axis_limits,
+            empirical_axis_values,
         )
+
+        # Check the empirical row before applying any manual scale override.
+        # Fits/references do not make a log axis valid or invalid.
+        policies = adapter.config.get('axis_policy', {}).get(level_definition.column, {})
+        row_available = {}
+        for axis in ('x', 'y'):
+            values = [v for source in sibling_specs for v in empirical_axis_values(source, axis)]
+            row_available[axis] = bool(values) and all(v > 0 for v in values)
+        for item in [spec] + [s for s in sibling_specs if s is not spec]:
+            available = dict(row_available)
+            for axis in ('x', 'y'):
+                if policies.get(axis, {}).get('limits') == 'data':
+                    values = empirical_axis_values(item, axis)
+                    available[axis] = bool(values) and all(v > 0 for v in values)
+            item.metadata['_log_available'] = available
+            if decorate_axis_policy is not None:
+                decorate_axis_policy(item, level)
     
         shared_y = shared_axis_limits(
             sibling_specs,
             'y',
-        )
-        policies = adapter.config.get('axis_policy', {}).get(
-            level_definition.column, {},
         )
         if shared_y is not None and policies.get('y', {}).get('limits') != 'data':
             spec.ylim = shared_y
@@ -1088,6 +1104,18 @@ class PsyView(App):
                 if self.spec is not None
                 else 'linear'
             )
+            if current != 'log':
+                from .plotting.axes import empirical_axis_values
+                values = empirical_axis_values(self.spec, axis) if self.spec is not None else []
+                valid = bool(values) and all(value > 0 for value in values)
+                if self.spec is not None:
+                    valid = self.spec.metadata.get('_log_available', {}).get(axis, valid)
+                if not valid:
+                    self.notify(
+                        f'{axis.upper()} log scale requires positive empirical data and uncertainty '
+                        'throughout the displayed row. Scale unchanged.'
+                    )
+                    return
             self.axis_scale_overrides[
                 key
             ] = (
