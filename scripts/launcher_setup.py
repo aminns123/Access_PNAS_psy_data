@@ -12,12 +12,63 @@ from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
 
+VERIFY_MODULES = (
+    'psyview.app',
+    'psyview.data.pnas_psychophysics',
+    'psyview.plotting.matplotlib_plots',
+)
+
 
 def verify_install():
+    """Fast in-process verification for an already-established environment."""
     importlib.metadata.distribution('psyview')
-    for name in ('psyview.app', 'psyview.data.pnas_psychophysics',
-                 'psyview.plotting.matplotlib_plots'):
+    for name in VERIFY_MODULES:
         importlib.import_module(name)
+
+
+def verify_install_fresh(root):
+    """Verify a just-installed editable package in a fresh Python process.
+
+    Editable installs can add the project's ``src`` directory through
+    interpreter-startup path configuration. The launcher process performing the
+    pip install was already running before that configuration existed, so a
+    same-process import can incorrectly fail immediately after a successful
+    install. A child interpreter accurately represents the process that will
+    actually launch PsyView next.
+    """
+    root = Path(root).resolve()
+    log = root / '.venv' / '.psyview_setup.log'
+
+    checks = [
+        "import importlib",
+        "import importlib.metadata",
+        "importlib.metadata.distribution('psyview')",
+    ]
+    checks.extend(
+        f"importlib.import_module({name!r})"
+        for name in VERIFY_MODULES
+    )
+    command = [
+        sys.executable,
+        '-c',
+        '; '.join(checks),
+    ]
+
+    with log.open('a', encoding='utf-8') as stream:
+        stream.write('\nFresh-interpreter import verification\n')
+        stream.flush()
+        result = subprocess.run(
+            command,
+            cwd=root,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+        )
+
+    if result.returncode:
+        raise ImportError(
+            'PsyView could not be imported by a fresh environment Python '
+            f'(exit {result.returncode}). See {log}'
+        )
 
 
 def install(arguments, stage, root):
@@ -89,11 +140,16 @@ def setup(root=ROOT):
     if subprocess.run([sys.executable, '-m', 'pip', '--disable-pip-version-check', 'check'], cwd=root).returncode:
         print('ERROR: Installed dependency consistency check failed.')
         return 1
+
+    # IMPORTANT: verify a fresh install using a NEW interpreter. The current
+    # launcher process pre-dates the editable-install path configuration and
+    # may not see it even though the next PsyView process will.
     try:
-        verify_install()
+        verify_install_fresh(root)
     except Exception as exc:
         print(f'ERROR: PsyView import failure after installation: {exc}')
         return 1
+
     if (root / 'pyproject.toml').read_bytes() != content:
         print('ERROR: pyproject.toml changed during setup. Run the launcher again.')
         return 1

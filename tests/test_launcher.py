@@ -24,10 +24,13 @@ def test_first_setup_then_offline_start(project, monkeypatch):
     assert launcher.setup(project) == 0
     assert any('--no-build-isolation' in c for c in calls)
     assert any('setuptools>=75' in c for c in calls)
+    assert any(c[:2] == [launcher.sys.executable, '-c'] for c in calls)
     marker = project / '.venv/.psyview_pyproject_hash'
     assert marker.read_text().strip() == hashlib.sha256((project/'pyproject.toml').read_bytes()).hexdigest()
+
     def forbidden(*args, **kwargs):
         raise AssertionError('Unchanged startup must not invoke pip or any subprocess')
+
     monkeypatch.setattr(launcher.subprocess, 'run', forbidden)
     assert launcher.setup(project) == 0
 
@@ -43,12 +46,46 @@ def test_changed_config_failed_install_preserves_hash(project, monkeypatch, fail
     assert (project/'.venv/.psyview_setup_pending').exists()
 
 
-def test_import_failure_does_not_record_success(project, monkeypatch):
+def test_post_install_import_failure_does_not_record_success(project, monkeypatch):
     monkeypatch.setattr(launcher.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=0))
-    def broken(): raise ImportError('missing textual')
-    monkeypatch.setattr(launcher, 'verify_install', broken)
+
+    def broken(root):
+        raise ImportError('missing textual')
+
+    monkeypatch.setattr(launcher, 'verify_install_fresh', broken)
     assert launcher.setup(project) == 1
     assert not (project/'.venv/.psyview_pyproject_hash').exists()
+
+
+def test_fresh_install_verification_uses_new_python_process(project, monkeypatch):
+    calls = []
+
+    def record(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(launcher.subprocess, 'run', record)
+
+    launcher.verify_install_fresh(project)
+
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command[:2] == [launcher.sys.executable, '-c']
+    assert kwargs['cwd'] == project.resolve()
+    assert 'psyview.app' in command[2]
+    assert 'psyview.data.pnas_psychophysics' in command[2]
+    assert 'psyview.plotting.matplotlib_plots' in command[2]
+
+
+def test_fresh_install_verification_failure_raises(project, monkeypatch):
+    monkeypatch.setattr(
+        launcher.subprocess,
+        'run',
+        lambda *a, **kw: SimpleNamespace(returncode=7),
+    )
+
+    with pytest.raises(ImportError, match='fresh environment Python'):
+        launcher.verify_install_fresh(project)
 
 
 def test_modified_configuration_updates_hash(project, monkeypatch):
@@ -62,9 +99,14 @@ def test_modified_configuration_updates_hash(project, monkeypatch):
 
 def test_incompatible_environment_preserved(project, monkeypatch):
     (project/'.venv/old-file').write_text('preserved')
+
     class Builder:
-        def __init__(self, **kwargs): pass
-        def create(self, target): target.mkdir()
+        def __init__(self, **kwargs):
+            pass
+
+        def create(self, target):
+            target.mkdir()
+
     monkeypatch.setattr(launcher.venv, 'EnvBuilder', Builder)
     assert launcher.create_environment(project) == 0
     assert next(project.glob('.venv.incompatible-*/old-file')).read_text() == 'preserved'
@@ -72,8 +114,12 @@ def test_incompatible_environment_preserved(project, monkeypatch):
 
 def test_no_environment(tmp_path, monkeypatch):
     class Builder:
-        def __init__(self, **kwargs): assert kwargs == {'with_pip': True}
-        def create(self, target): target.mkdir()
+        def __init__(self, **kwargs):
+            assert kwargs == {'with_pip': True}
+
+        def create(self, target):
+            target.mkdir()
+
     monkeypatch.setattr(launcher.venv, 'EnvBuilder', Builder)
     assert launcher.create_environment(tmp_path) == 0
     assert (tmp_path/'.venv').is_dir()
@@ -83,6 +129,7 @@ def test_network_failure_is_distinguished(project, monkeypatch, capsys):
     def fail(command, **kwargs):
         kwargs['stdout'].write('ConnectionResetError(10054): Could not fetch setuptools\n')
         return SimpleNamespace(returncode=1)
+
     monkeypatch.setattr(launcher.subprocess, 'run', fail)
     assert not launcher.install(['setuptools>=75'], 'Build-tool installation', project)
     output = capsys.readouterr().out

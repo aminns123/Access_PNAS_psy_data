@@ -32,6 +32,17 @@ jobs:
           tests/test_boolean_columns.py tests/test_inference.py
           tests/test_empirical_axis_limits.py tests/test_lateral_fit.py
           tests/test_shared_row_axes.py tests/test_declarative_axis_policy.py
+      - name: TUI view, fit UI and responsiveness
+        run: >-
+          python -m pytest -q
+          tests/test_responsive_parameter_ui.py
+          tests/test_view_state.py
+          tests/test_display_refinements.py
+          tests/test_fit_ui.py
+      - name: Windows launcher smoke test
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: run_psyview.bat --help
       - name: Unix launcher smoke test
         if: runner.os != 'Windows'
         run: |
