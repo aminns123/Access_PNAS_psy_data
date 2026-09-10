@@ -1,8 +1,9 @@
-PsyView SAFE declarative-axis fix
-=================================
+PsyView declarative-axis VISIBILITY FIX
+======================================
 
-This replaces the previous declarative-axis patch that made some plots appear
-empty or extremely compressed.
+This patch deliberately restores the last row-axis implementation that you
+confirmed displayed all plots correctly, then adds the YAML behaviour as a
+small post-processing layer.
 
 REPLACE:
     src/psyview/app.py
@@ -15,91 +16,52 @@ REPLACE:
     configs/lateral_sensitivity.yaml
 
 OPTIONAL:
-    tests/test_safe_declarative_axes.py
+    tests/test_declarative_axis_visibility_fix.py
 
-ROOT CAUSE FIX
-==============
-The previous declarative patch took each sibling plot's already-rounded /
-already-padded limits and then combined and rounded those limits again.
+IMPORTANT FIX
+-------------
+The failed versions replaced the proven row-axis calculation with a new
+sibling/raw-scale pipeline. That was too invasive.
 
-That can progressively enlarge a hierarchy-row range and make the actual data
-occupy only a tiny fraction of the TUI plotting area.
+This version DOES NOT replace it.
 
-This version starts again from the LAST KNOWN-GOOD fixed-row-axis code and
-changes one important rule:
+The sequence is now:
 
-    collect raw plotted sibling values
-        -> union raw values once
-        -> calculate one readable row limit
-        -> apply YAML preferred/rounding policy once
+    existing plot
+      -> existing known-good shared row limits
+      -> optional YAML scale/rounding/preferred bounds
+      -> renderer
 
-There is no repeated union of padded limits.
+The YAML layer never recalculates all sibling extents itself.
 
-CSF DEFAULT
-===========
-PNAS CSF remains declarative, not renderer-hard-coded:
+If a YAML/user scale would actually CHANGE a PlotSpec from linear to log (or
+vice versa), PsyView clears that axis's old manual limit and lets the renderer
+recalculate safely. This prevents a limit calculated in one scale from being
+used as though it belonged to another.
 
-    y:
-      scale: log
-      limits: row
-      rounding: decades
-      preferred_min: 10
-      preferred_max: 1000
+PNAS CSF DEFAULT
+----------------
+Still declarative:
 
-Examples:
+    scale: log
+    limits: row
+    rounding: decades
+    preferred_min: 10
+    preferred_max: 1000
 
-    row max 850, row min 18  -> 10 .. 1000
-    row max 850, row min 8   -> 1  .. 1000
-    row max 1800             -> 10 .. 10000
+So, when compatible with the data:
 
-Soft bounds never clip data.
+    18..850  -> 10..1000
+    8..850   -> 1..1000
+    18..1800 -> 10..10000
 
-USER SCALE CONTROLS
-===================
-    X   toggle numeric X log/linear
-    Y   toggle Y log/linear
+X / Y
+-----
+X toggles a numeric X axis between the current scale and the alternative.
+Y does the same for Y.
 
-Press the same key again to return to YAML/PlotSpec defaults.
+Pressing the same key again returns to dataset/default.
 
-A categorical box-plot X axis cannot be toggled because log/linear scaling is
-not meaningful for category positions.
+Categorical box-plot X axes are not toggled.
 
-If the user temporarily changes a configured log axis to linear, log-specific
-preferred bounds (for example CSF 10..1000) are not forced onto the linear
-view.
-
-ROW CONSISTENCY
-===============
-The existing fixed-row rule is retained:
-
-    all sibling plots at a hierarchy row use the same axis range.
-
-For categorical box plots:
-    X remains local/categorical
-    Y is shared across sibling selections.
-
-RIGHT-HAND AXIS KEY
-===================
-The key continues to show:
-
-    X meaning
-    X range or category values
-    X scale + source
-
-    Y meaning
-    Y range
-    Y scale + source
-
-    fixed-row scope
-
-VALIDATION
-==========
-The patch is syntax checked, AST checked to ensure all app methods are actually
-inside class PsyView, YAML parsed, and the requested CSF limit examples are
-tested directly.
-
-No empirical data or repositories are modified.
-
-RUN
-===
-    .\run_psyview.bat
+No empirical data, thresholds, fits, or repositories are changed.

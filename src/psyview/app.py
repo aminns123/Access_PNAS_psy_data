@@ -153,8 +153,7 @@ class PsyView(App):
         self.fit_edit_mode = False
         self.fit_cursor_index = 0
 
-        # Temporary user overrides keyed by (hierarchy_level, axis).
-        # Absence means use YAML/PlotSpec scientific defaults.
+        # Temporary per-level axis scale overrides. Empty = YAML / plot default.
         self.axis_scale_overrides = {}
 
         self.analysis_executor = ThreadPoolExecutor(
@@ -326,100 +325,157 @@ class PsyView(App):
         )
 
 
-
-    def _declared_axis_policy(
-        self,
-        adapter,
-        level,
-        axis,
-    ):
-        policies = adapter.config.get(
+    def _axis_config(self, level, axis):
+        """Return optional YAML display policy for one hierarchy level."""
+        policies = self.adapter.config.get(
             'axis_policy',
             {},
         )
-    
-        if not isinstance(
-            policies,
-            dict,
-        ):
+        if not isinstance(policies, dict):
             return {}
-    
-        column = adapter.levels()[
+
+        column = self.adapter.levels()[
             level
         ].column
-    
         level_policy = policies.get(
             column,
             {},
         )
-    
         if not isinstance(
             level_policy,
             dict,
         ):
             return {}
-    
+
         policy = level_policy.get(
             axis,
             {},
         )
-    
         return (
             dict(policy)
             if isinstance(policy, dict)
             else {}
         )
-    
-    def _effective_axis_scale(
+
+    def _decorate_axis_policy(
         self,
-        adapter,
-        level,
         spec,
-        axis,
+        level,
     ):
-        """YAML default -> temporary user override -> PlotSpec fallback."""
-        policy = self._declared_axis_policy(
-            adapter,
-            level,
-            axis,
+        """Layer YAML/user display choices over an already-valid PlotSpec.
+
+        Crucially this runs AFTER the known-good row limits have been resolved.
+        It never rebuilds sibling plot extents.
+        """
+        from .plotting.axes import (
+            apply_declared_limit_policy,
         )
-    
-        declared = str(
-            policy.get(
-                'scale',
-                'auto',
+
+        for axis in ('x', 'y'):
+            policy = self._axis_config(
+                level,
+                axis,
             )
-        ).lower()
-    
-        if declared in (
-            'linear',
-            'log',
-        ):
-            scale = declared
-            source = 'dataset config'
-        else:
-            scale = getattr(
+
+            configured = str(
+                policy.get(
+                    'scale',
+                    'auto',
+                )
+            ).lower()
+
+            original_scale = getattr(
                 spec,
                 axis + 'scale',
                 'linear',
             )
-            source = 'plot default'
-    
-        override = self.axis_scale_overrides.get(
-            (level, axis)
-        )
-    
-        if override in (
-            'linear',
-            'log',
-        ):
-            scale = override
-            source = 'user override'
-    
-        return scale, source
-    
+
+            override = self.axis_scale_overrides.get(
+                (
+                    level,
+                    axis,
+                )
+            )
+
+            if override in (
+                'linear',
+                'log',
+            ):
+                target_scale = override
+                source = 'user override'
+            elif configured in (
+                'linear',
+                'log',
+            ):
+                target_scale = configured
+                source = 'dataset config'
+            else:
+                target_scale = original_scale
+                source = 'plot default'
+
+            # The known datasets already construct CSF/staircase/etc. with
+            # their correct scientific scales. If a declaration changes scale,
+            # remove the old manual limit so the renderer safely recomputes
+            # the extent in the new coordinate system. This prioritises
+            # visibility over forcing an incompatible old range.
+            if target_scale != original_scale:
+                setattr(
+                    spec,
+                    axis + 'scale',
+                    target_scale,
+                )
+                setattr(
+                    spec,
+                    axis + 'lim',
+                    None,
+                )
+            else:
+                setattr(
+                    spec,
+                    axis + 'scale',
+                    target_scale,
+                )
+
+                resolved_limits = getattr(
+                    spec,
+                    axis + 'lim',
+                    None,
+                )
+
+                # Apply preferred/rounded bounds ONLY to an already-resolved
+                # valid row range. Categorical X axes are left alone.
+                if (
+                    resolved_limits is not None
+                    and not (
+                        axis == 'x'
+                        and getattr(
+                            spec,
+                            'xticks',
+                            [],
+                        )
+                    )
+                ):
+                    new_limits = apply_declared_limit_policy(
+                        resolved_limits,
+                        target_scale,
+                        policy,
+                    )
+                    if new_limits is not None:
+                        setattr(
+                            spec,
+                            axis + 'lim',
+                            new_limits,
+                        )
+
+            spec.metadata[
+                f'_{axis}_scale_source'
+            ] = source
+
+        return spec
+
+    @classmethod
     def _prepare_plot_with_row_axes(
-        self,
+        cls,
         adapter,
         level,
         filters,
@@ -430,13 +486,26 @@ class PsyView(App):
         parent_filters,
         sibling_values,
     ):
-        """Prepare current plot using one stable scale for all row siblings.
+        """Prepare current plot and lock its scale to its hierarchy row.
     
-        Important: limits are resolved ONCE from the union of raw sibling plot
-        values. We do not union already-rounded/padded limits. This keeps data
-        comfortably in frame and prevents cumulative scale expansion.
+        "Row" means the values selectable with left/right at the current
+        hierarchy depth, under the currently selected parents.
+    
+        Examples:
+          Subject row:
+              all subjects share one x/y range.
+    
+          Luminance row:
+              all luminances for the current subject share one x/y range.
+    
+          Spatial-frequency row:
+              all frequencies for the current subject/luminance share one
+              y range. If the plot is categorical (box plot), x remains local.
+    
+          Staircase row:
+              all staircases under the current parents share one x/y range.
         """
-        spec = self._prepare_plot(
+        spec = cls._prepare_plot(
             adapter,
             level,
             filters,
@@ -446,9 +515,7 @@ class PsyView(App):
             fit_edit_mode,
         )
     
-        level_definition = adapter.levels()[
-            level
-        ]
+        level_definition = adapter.levels()[level]
         sibling_specs = []
     
         for value in sibling_values:
@@ -460,6 +527,7 @@ class PsyView(App):
             ] = value
     
             try:
+                # Reuse current plot when it has no transient edit cursor.
                 if (
                     sibling_filters == filters
                     and not (
@@ -469,7 +537,7 @@ class PsyView(App):
                 ):
                     sibling_spec = spec
                 else:
-                    sibling_spec = self._prepare_plot(
+                    sibling_spec = cls._prepare_plot(
                         adapter,
                         level,
                         sibling_filters,
@@ -483,9 +551,11 @@ class PsyView(App):
                     sibling_spec
                 )
     
+            # A single unavailable sibling must not make the current valid
+            # selection disappear. Available siblings still define the scale.
             except Exception:
                 logger.debug(
-                    'Skipping unavailable sibling while resolving row axes',
+                    'Skipping sibling while resolving shared row axes',
                     exc_info=True,
                 )
     
@@ -493,106 +563,30 @@ class PsyView(App):
             sibling_specs = [spec]
     
         from .plotting.axes import (
-            shared_axis_limits_for_scale,
+            shared_axis_limits,
         )
     
-        for axis in ('x', 'y'):
-            scale, source = self._effective_axis_scale(
-                adapter,
-                level,
-                spec,
-                axis,
+        shared_y = shared_axis_limits(
+            sibling_specs,
+            'y',
+        )
+        if shared_y is not None:
+            spec.ylim = shared_y
+    
+        # Box/categorical plots intentionally keep their x positions local.
+        # Their category label (e.g. selected spatial frequency, base/flanker)
+        # remains the x-axis value, while only y is fixed across siblings.
+        if not getattr(
+            spec,
+            'xticks',
+            [],
+        ):
+            shared_x = shared_axis_limits(
+                sibling_specs,
+                'x',
             )
-    
-            setattr(
-                spec,
-                axis + 'scale',
-                scale,
-            )
-    
-            # All sibling specs must be interpreted on the same scientific
-            # scale while resolving this row.
-            for sibling_spec in sibling_specs:
-                setattr(
-                    sibling_spec,
-                    axis + 'scale',
-                    scale,
-                )
-    
-            spec.metadata[
-                f'_{axis}_scale_source'
-            ] = source
-    
-            # Categorical box-plot X positions are deliberately local.
-            if (
-                axis == 'x'
-                and getattr(
-                    spec,
-                    'xticks',
-                    [],
-                )
-            ):
-                continue
-    
-            policy = self._declared_axis_policy(
-                adapter,
-                level,
-                axis,
-            )
-    
-            scope = str(
-                policy.get(
-                    'limits',
-                    'row',
-                )
-            ).lower()
-    
-            # User scale override changes SCALE, not the scientific preferred
-            # window. A configured log-only preferred window (e.g. CSF
-            # 10..1000) is therefore disabled while viewing that axis linear.
-            limit_policy = dict(
-                policy
-            )
-    
-            if (
-                source == 'user override'
-                and str(
-                    policy.get(
-                        'scale',
-                        'auto',
-                    )
-                ).lower()
-                != scale
-            ):
-                limit_policy.pop(
-                    'preferred_min',
-                    None,
-                )
-                limit_policy.pop(
-                    'preferred_max',
-                    None,
-                )
-                limit_policy[
-                    'rounding'
-                ] = 'nice'
-    
-            if scope == 'row':
-                limits = shared_axis_limits_for_scale(
-                    sibling_specs,
-                    axis,
-                    scale,
-                    limit_policy,
-                )
-    
-                if limits is not None:
-                    setattr(
-                        spec,
-                        axis + 'lim',
-                        limits,
-                    )
-    
-            # `data` means leave the adapter/PlotSpec's normal local limits
-            # alone; this is particularly useful for categorical axes.
+            if shared_x is not None:
+                spec.xlim = shared_x
     
         spec.metadata[
             '_row_axis_scope'
@@ -607,7 +601,7 @@ class PsyView(App):
         )
     
         return spec
-    
+
     async def redraw(self):
         self.plot_generation += 1
         generation = self.plot_generation
@@ -736,6 +730,10 @@ class PsyView(App):
                         generation
                         == self.plot_generation
                     ):
+                        self._decorate_axis_policy(
+                            spec,
+                            level,
+                        )
                         self.display_spec(
                             spec
                         )
@@ -774,18 +772,23 @@ class PsyView(App):
                 parent_filters,
             )
 
+            spec = self._prepare_plot_with_row_axes(
+                self.adapter,
+                level,
+                filters,
+                None,
+                use_fit,
+                None,
+                False,
+                parent_filters,
+                sibling_values,
+            )
+            self._decorate_axis_policy(
+                spec,
+                level,
+            )
             self.display_spec(
-                self._prepare_plot_with_row_axes(
-                    self.adapter,
-                    level,
-                    filters,
-                    None,
-                    use_fit,
-                    None,
-                    False,
-                    parent_filters,
-                    sibling_values,
-                )
+                spec
             )
         except Exception as exc:
             logger.exception(
@@ -841,7 +844,6 @@ class PsyView(App):
         return '━━'
 
 
-
     def _legend_text(self, spec):
         from .plotting.axes import (
             axis_policy,
@@ -857,7 +859,6 @@ class PsyView(App):
                 if series.label
                 else ''
             )
-    
             if (
                 not label
                 or label in seen
@@ -894,26 +895,23 @@ class PsyView(App):
             'xticks',
             [],
         ):
+            category_text = ' | '.join(
+                str(label)
+                for _, label in spec.xticks
+            )
             lines.append(
-                'X values: '
-                + ' | '.join(
-                    str(label)
-                    for _, label
-                    in spec.xticks
-                )
+                f'X values: {category_text}'
             )
         else:
-            lines.extend([
-                (
-                    'X range: '
-                    f'{tick_label(x_limits[0])} → '
-                    f'{tick_label(x_limits[1])}'
-                ),
-                (
-                    f'X scale: {x_scale} '
-                    f'({spec.metadata.get("_x_scale_source", "plot default")})'
-                ),
-            ])
+            lines.append(
+                'X range: '
+                f'{tick_label(x_limits[0])} → '
+                f'{tick_label(x_limits[1])}'
+            )
+            lines.append(
+                f'X scale: {x_scale} '
+                f'({spec.metadata.get("_x_scale_source", "plot default")})'
+            )
     
         lines.extend([
             f'Y: {spec.ylabel or "not specified"}',
@@ -922,10 +920,8 @@ class PsyView(App):
                 f'{tick_label(y_limits[0])} → '
                 f'{tick_label(y_limits[1])}'
             ),
-            (
-                f'Y scale: {y_scale} '
-                f'({spec.metadata.get("_y_scale_source", "plot default")})'
-            ),
+            f'Y scale: {y_scale} '
+            f'({spec.metadata.get("_y_scale_source", "plot default")})',
         ])
     
         scope = spec.metadata.get(
@@ -960,16 +956,14 @@ class PsyView(App):
                 lines.append(
                     f'{symbol:<3}{wrapped[0]}'
                 )
-    
                 for continuation in wrapped[1:]:
                     lines.append(
                         f'   {continuation}'
                     )
-    
                 lines.append('')
     
         return '\n'.join(lines).rstrip()
-    
+
     def display_spec(self, spec):
         self.spec = spec
 
@@ -1091,14 +1085,10 @@ class PsyView(App):
             mode
         )
 
-
-    async def _toggle_axis_scale(
-        self,
-        axis,
-    ):
+    async def _toggle_axis_scale(self, axis):
         if axis not in ('x', 'y'):
             return
-    
+
         if (
             axis == 'x'
             and self.spec is not None
@@ -1112,22 +1102,20 @@ class PsyView(App):
                 'This X axis is categorical; log/linear scaling does not apply.'
             )
             return
-    
+
         level = self.selection.active
         key = (
             level,
             axis,
         )
-    
+
         if key in self.axis_scale_overrides:
             del self.axis_scale_overrides[
                 key
             ]
-    
             self.notify(
-                f'{axis.upper()} scale returned to dataset/default policy.'
+                f'{axis.upper()} scale returned to dataset/default.'
             )
-    
         else:
             current = (
                 getattr(
@@ -1138,7 +1126,6 @@ class PsyView(App):
                 if self.spec is not None
                 else 'linear'
             )
-    
             self.axis_scale_overrides[
                 key
             ] = (
@@ -1146,25 +1133,24 @@ class PsyView(App):
                 if current == 'log'
                 else 'log'
             )
-    
             self.notify(
-                f'{axis.upper()} scale override: '
-                f'{self.axis_scale_overrides[key]}. '
-                f'Press {axis.upper()} again to restore dataset/default.'
+                f'{axis.upper()} scale: '
+                f'{self.axis_scale_overrides[key]} '
+                f'(temporary override).'
             )
-    
+
         await self.redraw()
-    
+
     async def action_x_scale(self):
         await self._toggle_axis_scale(
             'x'
         )
-    
+
     async def action_y_scale(self):
         await self._toggle_axis_scale(
             'y'
         )
-    
+
     def action_analysis(self):
         if not hasattr(
             self.adapter,

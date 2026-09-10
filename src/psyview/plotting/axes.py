@@ -304,83 +304,31 @@ def shared_axis_limits(specs, axis):
     )
 
 
-def raw_axis_values(specs, axis, scale=None):
-    """Collect physical plotted values across sibling specs.
+def apply_declared_limit_policy(limits, scale, policy=None):
+    """Expand/round an already-working resolved axis range.
 
-    Limits are derived from the actual plotted coordinates, not from another
-    round of already-padded limits. This avoids cumulative expansion.
+    This function never computes plot extents itself. It only post-processes
+    the range produced by PsyView's established row-sharing code, so it cannot
+    move data outside a newly invented coordinate system.
 
-    Guide lines in the orthogonal direction do not define a data extent:
-      - a vertical line does not define Y range;
-      - a horizontal line does not define X range.
+    preferred_min / preferred_max are soft bounds: they may enlarge a range,
+    never shrink it and never clip data.
     """
-    values = []
-
-    for spec in specs:
-        for series in spec.series:
-            if axis == 'y' and series.kind == 'vline':
-                continue
-            if axis == 'x' and series.kind == 'hline':
-                continue
-
-            for value in getattr(series, axis):
-                if finite(value):
-                    value = float(value)
-                    if scale == 'log' and value <= 0:
-                        continue
-                    values.append(value)
-
-    return values
-
-
-def limits_from_values(values, axis, scale):
-    """One readable limit calculation from a union of raw sibling values."""
-    values = [
-        float(value)
-        for value in values
-        if finite(value)
-        and (
-            scale != 'log'
-            or float(value) > 0
-        )
-    ]
-
-    if not values:
-        return None
-
-    if axis == 'y':
-        return nice_y_limits(
-            values,
-            scale,
-        )
-
-    return padded_limits(
-        values,
-        scale,
-    )
-
-
-def apply_declared_limit_policy(
-    limits,
-    scale,
-    policy=None,
-):
-    """Apply an optional YAML display policy without ever clipping data.
-
-    preferred_min/preferred_max are SOFT display bounds: they may enlarge the
-    range, never shrink it past the data-containing range.
-
-    For log + `rounding: decades`, limits move outward to powers of ten.
-
-    Examples:
-        row data 18..850 + preferred 10..1000 -> 10..1000
-        row data 8..850  + preferred 10..1000 -> 1..1000
-        row data 18..1800                     -> 10..10000
-    """
-    if limits is None:
-        return None
+    if (
+        limits is None
+        or len(limits) != 2
+    ):
+        return limits
 
     lo, hi = map(float, limits)
+
+    if not (
+        finite(lo)
+        and finite(hi)
+        and lo < hi
+    ):
+        return limits
+
     policy = (
         policy
         if isinstance(policy, dict)
@@ -449,12 +397,16 @@ def apply_declared_limit_policy(
             lo = _nice_log_floor(lo)
             hi = _nice_log_ceil(hi)
 
-    elif rounding in ('nice', 'decades'):
-        # If a user temporarily changes a configured log axis to linear,
-        # do normal linear rounding; never reuse decade semantics.
-        if hi > lo:
+    elif rounding in (
+        'nice',
+        'decades',
+    ):
+        # If the axis is currently linear, use ordinary readable linear
+        # rounding rather than decade logic.
+        span = hi - lo
+        if span > 0:
             step = _nice_linear_step(
-                (hi - lo) / 4.0
+                span / 4.0
             )
             lo = math.floor(
                 lo / step
@@ -463,36 +415,12 @@ def apply_declared_limit_policy(
                 hi / step
             ) * step
 
-    if not lo < hi:
-        return limits
-
-    return lo, hi
-
-
-def shared_axis_limits_for_scale(
-    specs,
-    axis,
-    scale,
-    policy=None,
-):
-    """Resolve one fixed row range directly from all sibling raw values."""
-    values = raw_axis_values(
-        specs,
-        axis,
-        scale,
+    return (
+        (lo, hi)
+        if lo < hi
+        else limits
     )
 
-    limits = limits_from_values(
-        values,
-        axis,
-        scale,
-    )
-
-    return apply_declared_limit_policy(
-        limits,
-        scale,
-        policy,
-    )
 
 def anchor_ticks(limits, scale='linear'):
     """Return guaranteed lower / middle / upper display ticks.
