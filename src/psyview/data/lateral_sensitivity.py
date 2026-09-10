@@ -155,6 +155,7 @@ class LateralAdapter(CSVAdapter):
         self._interactive = None
         self._fit_cache = {}
         self._fit_exclusions = {}
+        self._custom_fit_definition = None
 
     def table(self, source):
         frame = super().table(source)
@@ -245,6 +246,17 @@ class LateralAdapter(CSVAdapter):
 
     def supports_fit(self, level):
         return level == 1
+
+    def custom_fit_definition(self):
+        return self._custom_fit_definition
+
+    def set_custom_fit_definition(self, definition):
+        self._custom_fit_definition = definition
+        self._fit_cache.clear()
+
+    def reset_custom_fit_definition(self):
+        self._custom_fit_definition = None
+        self._fit_cache.clear()
 
     def _condition_id(
         self,
@@ -487,6 +499,131 @@ class LateralAdapter(CSVAdapter):
                         role='cursor',
                     )
                 )
+
+        fit_function = self._custom_fit_definition
+
+        if fit_function is not None:
+            custom_cache_key = (
+                'custom_fit',
+                condition_id,
+                (
+                    analysis.mode
+                    if analysis is not None
+                    else 'archived'
+                ),
+                (
+                    analysis.n_reversals
+                    if (
+                        analysis is not None
+                        and analysis.mode == 'interactive'
+                    )
+                    else None
+                ),
+                fit_function.cache_key(),
+                tuple(
+                    sorted(
+                        round(
+                            float(value),
+                            10,
+                        )
+                        for value in exclusions
+                    )
+                ),
+            )
+
+            if custom_cache_key not in self._fit_cache:
+                from ..analysis.custom_fit import (
+                    fit_custom_profile,
+                )
+
+                try:
+                    result = fit_custom_profile(
+                        profile,
+                        fit_function,
+                        excluded_x=exclusions,
+                    )
+                    self._fit_cache[
+                        custom_cache_key
+                    ] = (
+                        'ok',
+                        result,
+                    )
+                except Exception as exc:
+                    self._fit_cache[
+                        custom_cache_key
+                    ] = (
+                        'error',
+                        str(exc),
+                    )
+
+            status, payload = self._fit_cache[
+                custom_cache_key
+            ]
+
+            if status == 'error':
+                spec.metadata[
+                    '_fit_display'
+                ] = (
+                    'INTERACTIVE / DIAGNOSTIC CUSTOM FIT\n'
+                    f'R(x)={fit_function.source_expression}\n'
+                    f'Fit unavailable: {payload}\n'
+                    f'Excluded points: {len(exclusions)}.'
+                )
+                spec.metadata[
+                    'Diagnostic fit function'
+                ] = 'custom'
+                spec.metadata[
+                    'Diagnostic fit exclusions'
+                ] = len(exclusions)
+                return spec
+
+            result = payload
+
+            from ..analysis.custom_fit import (
+                custom_fit_display_text,
+            )
+
+            spec.series.append(
+                Series(
+                    result.x_curve,
+                    result.y_curve,
+                    'Custom diagnostic fit',
+                    color='red',
+                    role='fit',
+                )
+            )
+
+            spec.metadata[
+                '_fit_display'
+            ] = custom_fit_display_text(
+                fit_function,
+                result,
+            )
+            spec.metadata[
+                'Diagnostic fit function'
+            ] = 'custom'
+            spec.metadata[
+                'Diagnostic fit points'
+            ] = result.n_points
+            spec.metadata[
+                'Diagnostic fit exclusions'
+            ] = result.excluded_points
+            spec.metadata[
+                'Diagnostic fit weighting'
+            ] = (
+                'full spread with sigma floor 0.05'
+            )
+
+            spec.notes += (
+                ' The red curve is a NEW on-demand custom diagnostic fit '
+                'to the currently displayed profile. It uses the same '
+                'empirical spread weighting and session-only fit-point '
+                'exclusions as the Eq. B.25 diagnostic fitter. It is not '
+                'an archived historical fit and does not replace the '
+                'archived ISF.'
+            )
+
+            return spec
 
         cache_key = (
             'fit',

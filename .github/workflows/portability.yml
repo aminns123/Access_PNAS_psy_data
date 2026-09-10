@@ -31,6 +31,7 @@ jobs:
           tests/test_portability.py tests/test_launcher.py
           tests/test_boolean_columns.py tests/test_inference.py
           tests/test_empirical_axis_limits.py tests/test_lateral_fit.py
+          tests/test_custom_fit.py
           tests/test_shared_row_axes.py tests/test_declarative_axis_policy.py
       - name: TUI view, fit UI and responsiveness
         run: >-

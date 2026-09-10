@@ -162,7 +162,7 @@ class PsyView(App):
         self.fit_enabled = False
         self.fit_edit_mode = False
         self.fit_cursor_index = 0
-        # Stage-1 UI only: this text is never executed by the fitter.
+        # Session-only validated custom fit definition; None means thesis Eq. B.25.
         self.fit_function_preview = None
 
         # Session-only View overrides, scoped by hierarchy level/view type.
@@ -755,8 +755,15 @@ class PsyView(App):
                 )
             elif use_fit:
                 message = (
-                    'Fitting thesis Eq. B.25 to the '
-                    'current lateral-sensitivity profile…'
+                    (
+                        'Fitting custom equation to the '
+                        'current lateral-sensitivity profile…'
+                    )
+                    if self.fit_function_preview is not None
+                    else (
+                        'Fitting thesis Eq. B.25 to the '
+                        'current lateral-sensitivity profile…'
+                    )
                 )
             else:
                 message = (
@@ -1518,7 +1525,11 @@ class PsyView(App):
                 + (
                     'HIDE FIT'
                     if self.fit_enabled
-                    else 'FIT Eq. B.25'
+                    else (
+                        'FIT CUSTOM'
+                        if self.fit_function_preview is not None
+                        else 'FIT Eq. B.25'
+                    )
                 )
             )
 
@@ -1648,7 +1659,7 @@ class PsyView(App):
     def action_fit_function(self):
         if not self._fit_supported_here():
             self.notify(
-                'Fit-function preview is available on the lateral '
+                'Fit-function editing is available on the lateral '
                 'Luminance/profile level.'
             )
             return
@@ -1664,27 +1675,55 @@ class PsyView(App):
                 return
 
             mode = result.get('mode')
+
             if mode == 'default':
                 self.fit_function_preview = None
-                self.notify(
-                    'Fit-function preview reset. '
-                    'F continues to fit thesis Eq. B.25.'
+                resetter = getattr(
+                    self.adapter,
+                    'reset_custom_fit_definition',
+                    None,
                 )
-            elif mode == 'preview':
-                preview = result.get('preview')
-                if preview is None:
+                if resetter is not None:
+                    resetter()
+                self.notify(
+                    'Fit function restored to thesis Eq. B.25.'
+                )
+
+            elif mode == 'custom':
+                definition = result.get('definition')
+                if definition is None:
                     return
-                self.fit_function_preview = preview
-                self.notify(
-                    'Custom equation saved as a session-only preview. '
-                    'It is NOT fitted yet; F still fits thesis Eq. B.25.'
+
+                setter = getattr(
+                    self.adapter,
+                    'set_custom_fit_definition',
+                    None,
                 )
+                if setter is None:
+                    self.notify(
+                        'This adapter does not support custom fit functions.',
+                        severity='warning',
+                    )
+                    return
+
+                setter(definition)
+                self.fit_function_preview = definition
+                self.notify(
+                    'Custom fit function selected for this session.'
+                )
+
             else:
                 return
 
-            self._refresh_right_panel()
             self.show_analysis()
             self._queue_keyboard_focus_restore()
+
+            if self.fit_enabled:
+                asyncio.create_task(
+                    self.redraw(force_background=True)
+                )
+            else:
+                self._refresh_right_panel()
 
         self.push_screen(
             FitFunctionScreen(
