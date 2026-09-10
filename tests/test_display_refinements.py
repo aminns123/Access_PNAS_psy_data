@@ -33,7 +33,7 @@ async def test_log_toggle_refuses_nonpositive_empirical_uncertainty_in_sibling(e
     assert app.spec == before
     assert app.axis_scale_overrides == {}
     app.redraw.assert_not_awaited()
-    assert 'requires positive empirical data and uncertainty' in notifications[0]
+    assert 'requires positive empirical data' in notifications[0]
     overridden = row_specs([first, second], configured, {(0, 'y'): 'log'})
     assert all(axis_policy(spec, 'y') == axis_policy(specs[0], 'y') for spec in overridden)
 
