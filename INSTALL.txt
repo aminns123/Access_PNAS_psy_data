@@ -1,90 +1,110 @@
-PsyView: row-local nice y limits + guaranteed axis labels in legend
-===================================================================
+PsyView fixed hierarchy-row axes patch
+======================================
 
 REPLACE:
-    src/psyview/plotting/axes.py
-    src/psyview/plotting/boxplots.py
     src/psyview/app.py
+    src/psyview/plotting/axes.py
 
 OPTIONAL:
-    tests/test_nice_row_y_limits.py
+    tests/test_shared_row_axes.py
 
-1. Y LIMITS ARE NOW BASED ON THE CURRENT ROW
---------------------------------------------
-This is a GLOBAL rule, not a CSF-only or box-plot-only rule.
+WHAT "FIXED BY ROW" NOW MEANS
+-----------------------------
+The scale is no longer recalculated independently for every left/right choice.
 
-For every plot, PsyView looks at the y values actually present in the current
-row/selection and chooses readable outward limits.
+Instead, when PsyView is on a hierarchy row, it considers ALL sibling choices
+available on that row under the same selected parents and takes an axis range
+large enough to contain all of them.
 
 Examples:
 
-    CSF sensitivities:
-        actual data roughly 18 ... 730
-        displayed y range -> 10 ... 1000   (log)
+TOP SUBJECT ROW
+    S1 | S2 | S3 | S4
 
-    staircase-threshold box:
-        actual thresholds 0.023 ... 0.036
-        displayed y range -> 0.02 ... 0.05 (log)
+All four Subject-level plots share exactly the same numeric x and y limits.
+Cycling S1 -> S2 -> S3 -> S4 therefore does NOT move either scale.
 
-    linear lateral profile:
-        limits are rounded just outside the current min/max using readable
-        linear steps.
+LUMINANCE / CONDITION ROW
+    10 | 20 | 50 | 100 | ...
 
-The rule is deliberately row-local. Therefore, when you cycle conditions, the
-visible y-range changes only if that row's data require a different range.
+All plots for those sibling luminances under the current subject share one x/y
+range.
 
-2. LOG AXIS RULE
-----------------
-For broad log ranges (such as many CSFs), PsyView uses surrounding powers of
-ten. This gives familiar scales such as:
+STAIRCASE ROW
+    S1 | S2 | S3 | S4
 
-    1 -> 100
-    10 -> 1000
-    100 -> 10000
+All individual staircase trajectories under the current parents share one x/y
+range, so the trajectories can be compared directly without rescaling.
 
-For tighter log ranges (such as threshold distributions), it uses the
-readable 1 / 2 / 5 sequence so the box plot does not become excessively broad:
+BOX-PLOT ROWS
+-------------
+Box plots are the deliberate exception on x.
 
-    0.023 ... 0.036 -> 0.02 ... 0.05
+Their y range is fixed across every sibling condition on that row, but their
+x-axis remains categorical/local so the selected condition/category can still
+be named directly.
 
-3. MIN / MIDDLE / MAX TICKS
----------------------------
-The previous patch's guaranteed y-axis min / middle / max tick labels remains
-in force. The new limits feed directly into that shared tick policy.
+For example, PNAS Spatial frequency:
 
-So the user can always read the actual scale and tell whether it changed
-between conditions.
+    select 2 cpd   -> one box labelled "2"
+    select 4 cpd   -> one box labelled "4"
+    select 8 cpd   -> one box labelled "8"
 
-4. X AND Y AXIS MEANINGS ARE ALWAYS IN THE RIGHT-HAND LEGEND
--------------------------------------------------------------
-The right-hand panel now begins with, for example:
+All of those boxes use THE SAME y limits, encompassing the threshold
+distributions for every spatial-frequency sibling in that row.
 
-    AXES
+Likewise lateral Position/Experiment box plots share y scales across siblings
+while retaining their repository-defined x categories.
 
-    X: Spatial frequency (cpd)
-    Y: Contrast sensitivity (1 / normalized source contrast)
-    Y range: 10 -> 1000
-    Y scale: log
+AXIS KEY
+--------
+The right-hand panel now explicitly reports both axes:
 
-    KEY
-    ...
+    X: ...
+    X range: ... -> ...
+    X scale: ...
 
-This is intentionally redundant with the drawn axis labels. Terminal plots can
-occasionally have too little physical room for long labels, but the scientific
-meaning of X and Y is now always visible in the key panel.
+    Y: ...
+    Y range: ... -> ...
+    Y scale: ...
 
-This applies to every PlotSpec-based dataset/adapter, including future ones.
+    Scale: fixed across N <row-name> values
 
-5. NO ANALYSIS CHANGES
-----------------------
-This patch changes presentation only:
-    - no thresholds
-    - no sensitivities
-    - no fitting
-    - no error calculations
-    - no empirical files
+For categorical box plots it instead reports:
 
-are altered.
+    X values: ...
+
+This makes it explicit whether two conditions genuinely share a scale.
+
+HOW THE RANGE IS CHOSEN
+-----------------------
+Each sibling plot first receives the same normal "nice" local limits already
+used by PsyView. The row then takes the union:
+
+    shared min = smallest sibling lower limit
+    shared max = largest sibling upper limit
+
+So the final shared scale contains every sibling plot without arbitrary global
+dataset-wide inflation.
+
+The scope is hierarchical:
+    top row -> all top-row siblings
+    child row -> all siblings under the currently selected parent(s)
+
+This is generic and adapter-independent. No Subject/Luminance/Staircase names
+are hard-coded into the scale algorithm.
+
+FITS / INTERACTIVE N
+--------------------
+Interactive plots are included at the current N.
+
+When a diagnostic fit is enabled, sibling fitted plots are also considered so
+the fit does not cause one condition to use a different scale.
+
+NO SCIENCE OR DATA CHANGES
+--------------------------
+No empirical data, thresholds, sensitivities, fits, exclusions, or repository
+files are modified. This is display policy only.
 
 RUN
 ---

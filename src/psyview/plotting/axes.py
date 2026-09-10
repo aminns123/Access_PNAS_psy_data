@@ -261,6 +261,48 @@ def axis_policy(spec, axis):
 
 
 
+
+def shared_axis_limits(specs, axis):
+    """Return one limit pair encompassing every sibling plot in a row.
+
+    Each sibling first gets its normal local axis policy.  The shared row
+    limits are then the union of those resolved limits.  This preserves the
+    existing readable rounding/padding while guaranteeing that left/right
+    navigation within one hierarchy row never changes the displayed range.
+    """
+    resolved = []
+
+    for spec in specs:
+        try:
+            _, limits, _ = axis_policy(
+                spec,
+                axis,
+            )
+        except (TypeError, ValueError, OverflowError):
+            continue
+
+        if (
+            limits is not None
+            and len(limits) == 2
+            and finite(limits[0])
+            and finite(limits[1])
+            and float(limits[0]) < float(limits[1])
+        ):
+            resolved.append(
+                (
+                    float(limits[0]),
+                    float(limits[1]),
+                )
+            )
+
+    if not resolved:
+        return None
+
+    return (
+        min(item[0] for item in resolved),
+        max(item[1] for item in resolved),
+    )
+
 def anchor_ticks(limits, scale='linear'):
     """Return guaranteed lower / middle / upper display ticks.
 
