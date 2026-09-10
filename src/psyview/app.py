@@ -13,6 +13,8 @@ import textwrap
 from .ui.hierarchy import Hierarchy
 from .ui.help_screen import HelpScreen
 from .ui.busy import BusyOverlay
+from .ui.axis_limit_screen import AxisLimitScreen
+from .ui.view_state import SCALE_CHOICES, SCOPE_CHOICES, cycle_choice
 from .plotting.terminal import (
     TerminalPlotRenderer,
     ScientificPlot,
@@ -118,8 +120,9 @@ class PsyView(App):
         Binding('end', 'last', 'Last', show=False),
         ('enter', 'enter', 'Open'),
         ('a', 'analysis', 'Analysis'),
-        ('x', 'x_scale', 'X scale'),
-        ('y', 'y_scale', 'Y scale'),
+        ('v', 'view', 'View'),
+        Binding('x', 'x_scale', 'X scale', show=False),
+        Binding('y', 'y_scale', 'Y scale', show=False),
         ('r', 'reload', 'Reload'),
         ('m', 'matplotlib', 'Matplotlib'),
         ('s', 'save', 'Save PNG'),
@@ -157,8 +160,13 @@ class PsyView(App):
         self.fit_edit_mode = False
         self.fit_cursor_index = 0
 
-        # Temporary per-level axis scale overrides. Empty = YAML / plot default.
+        # Session-only View overrides, scoped by hierarchy level/view type.
+        # Missing entries mean the dataset/default policy remains authoritative.
         self.axis_scale_overrides = {}
+        self.axis_limit_overrides = {}
+        self.axis_scope_overrides = {}
+        self.view_focus = False
+        self.view_index = 0
 
         self.analysis_executor = ThreadPoolExecutor(
             max_workers=1,
@@ -456,6 +464,7 @@ class PsyView(App):
         parent_filters,
         sibling_values,
         decorate_axis_policy=None,
+        scope_override=None,
     ):
         """Prepare current plot and lock its scale to its hierarchy row.
     
@@ -540,7 +549,20 @@ class PsyView(App):
 
         # Check the empirical row before applying any manual scale override.
         # Fits/references do not make a log axis valid or invalid.
-        policies = adapter.config.get('axis_policy', {}).get(level_definition.column, {})
+        raw_policies = adapter.config.get('axis_policy', {}).get(
+            level_definition.column,
+            {},
+        )
+        policies = {
+            axis: dict(raw_policies.get(axis, {}))
+            if isinstance(raw_policies.get(axis, {}), dict)
+            else {}
+            for axis in ('x', 'y')
+        }
+        if scope_override in ('data', 'row'):
+            for axis in ('x', 'y'):
+                policies[axis]['limits'] = scope_override
+
         row_available = {}
         for axis in ('x', 'y'):
             values = [v for source in sibling_specs for v in empirical_axis_values(source, axis)]
@@ -577,16 +599,30 @@ class PsyView(App):
             if shared_x is not None and policies.get('x', {}).get('limits') != 'data':
                 spec.xlim = shared_x
     
-        spec.metadata[
-            '_row_axis_scope'
-        ] = (
-            f'fixed across {len(sibling_specs)} '
-            f'{level_definition.name} value'
-            + (
-                ''
-                if len(sibling_specs) == 1
-                else 's'
+        shared_axes = []
+        if policies.get('y', {}).get('limits') != 'data':
+            shared_axes.append('Y')
+        if (
+            not getattr(spec, 'xticks', [])
+            and policies.get('x', {}).get('limits') != 'data'
+        ):
+            shared_axes.append('X')
+
+        if shared_axes:
+            spec.metadata['_row_axis_scope'] = (
+                f"{'/'.join(shared_axes)} fixed across {len(sibling_specs)} "
+                f'{level_definition.name} value'
+                + ('' if len(sibling_specs) == 1 else 's')
+                + (' (user override)' if scope_override else '')
             )
+        else:
+            spec.metadata['_row_axis_scope'] = (
+                'current selection data'
+                + (' (user override)' if scope_override else '')
+            )
+
+        spec.metadata['_limit_scope_source'] = (
+            'user override' if scope_override else 'dataset config'
         )
     
         return spec
@@ -719,12 +755,14 @@ class PsyView(App):
                             parent_filters,
                             sibling_values,
                             self._decorate_axis_policy,
+                            self.axis_scope_overrides.get(level),
                         )
                     )
                     if (
                         generation
                         == self.plot_generation
                     ):
+                        self._apply_view_axis_limits(spec, level)
                         self.display_spec(
                             spec
                         )
@@ -777,7 +815,9 @@ class PsyView(App):
                 parent_filters,
                 sibling_values,
                 self._decorate_axis_policy,
+                self.axis_scope_overrides.get(level),
             )
+            self._apply_view_axis_limits(spec, level)
             self.display_spec(
                 spec
             )
@@ -834,6 +874,380 @@ class PsyView(App):
 
         return '━━'
 
+
+
+    def _view_items(self):
+        """Return the rows in the keyboard-first View panel."""
+        categorical_x = bool(
+            self.spec is not None
+            and getattr(self.spec, 'xticks', [])
+        )
+        return [
+            ('x_scale', 'X scale', categorical_x),
+            ('x_min', 'X minimum', categorical_x),
+            ('x_max', 'X maximum', categorical_x),
+            ('y_scale', 'Y scale', False),
+            ('y_min', 'Y minimum', False),
+            ('y_max', 'Y maximum', False),
+            ('scope', 'Limit scope', False),
+            ('reset', 'Reset defaults', False),
+        ]
+
+    def _normalize_view_index(self):
+        selectable = [
+            index
+            for index, (_, _, disabled) in enumerate(self._view_items())
+            if not disabled
+        ]
+        if not selectable:
+            self.view_index = 0
+        elif self.view_index not in selectable:
+            self.view_index = selectable[0]
+
+    def _view_move(self, delta):
+        selectable = [
+            index
+            for index, (_, _, disabled) in enumerate(self._view_items())
+            if not disabled
+        ]
+        if not selectable:
+            return
+
+        self._normalize_view_index()
+        position = selectable.index(self.view_index)
+        step = 1 if delta >= 0 else -1
+        self.view_index = selectable[(position + step) % len(selectable)]
+        self._refresh_right_panel()
+
+    def _configured_scope_label(self, level):
+        policies = self.adapter.config.get('axis_policy', {}).get(
+            self.adapter.levels()[level].column,
+            {},
+        )
+        scopes = []
+        for axis in ('x', 'y'):
+            if (
+                axis == 'x'
+                and self.spec is not None
+                and getattr(self.spec, 'xticks', [])
+            ):
+                continue
+            policy = policies.get(axis, {})
+            if isinstance(policy, dict):
+                scope = str(policy.get('limits', 'row')).lower()
+                if scope in ('data', 'row'):
+                    scopes.append(scope)
+
+        if not scopes:
+            return 'Row'
+        if len(set(scopes)) == 1:
+            return scopes[0].title()
+        return 'Mixed'
+
+    def _auto_axis_limits(self, spec, axis):
+        from .plotting.axes import axis_policy
+
+        stored = spec.metadata.get(f'_auto_{axis}lim')
+        if isinstance(stored, (tuple, list)) and len(stored) == 2:
+            return tuple(float(value) for value in stored)
+
+        _, limits, _ = axis_policy(spec, axis)
+        return tuple(float(value) for value in limits)
+
+    def _apply_view_axis_limits(self, spec, level):
+        """Apply manual display bounds after PsyView resolves automatic axes."""
+        from .plotting.axes import axis_policy
+
+        for axis in ('x', 'y'):
+            if axis == 'x' and getattr(spec, 'xticks', []):
+                continue
+
+            scale, automatic, _ = axis_policy(spec, axis)
+            automatic = tuple(float(value) for value in automatic)
+            spec.metadata[f'_auto_{axis}lim'] = automatic
+
+            manual = self.axis_limit_overrides.get((level, axis), {})
+            lower = manual.get('min')
+            upper = manual.get('max')
+            effective_lower = automatic[0] if lower is None else float(lower)
+            effective_upper = automatic[1] if upper is None else float(upper)
+
+            # Editing validates this before state is stored. Keep this guard so
+            # stale session state can never corrupt the plot.
+            if effective_lower >= effective_upper:
+                continue
+            if scale == 'log' and (
+                effective_lower <= 0
+                or effective_upper <= 0
+            ):
+                continue
+
+            setattr(
+                spec,
+                axis + 'lim',
+                (effective_lower, effective_upper),
+            )
+            spec.metadata[f'_{axis}_limit_source'] = (
+                'user override'
+                if lower is not None or upper is not None
+                else 'automatic'
+            )
+
+        return spec
+
+    def _view_value(self, key, spec):
+        from .plotting.axes import axis_policy, tick_label
+
+        level = self.selection.active
+
+        if key in ('x_scale', 'y_scale'):
+            axis = key[0]
+            if axis == 'x' and getattr(spec, 'xticks', []):
+                return 'Categorical'
+            override = self.axis_scale_overrides.get((level, axis))
+            effective, _, _ = axis_policy(spec, axis)
+            if override is None:
+                return f'Default ({effective.title()})'
+            return override.title()
+
+        if key in ('x_min', 'x_max', 'y_min', 'y_max'):
+            axis = key[0]
+            if axis == 'x' and getattr(spec, 'xticks', []):
+                return 'Categorical'
+            bound = 'min' if key.endswith('_min') else 'max'
+            manual = self.axis_limit_overrides.get((level, axis), {})
+            value = manual.get(bound)
+            if value is not None:
+                return tick_label(value)
+
+            limits = self._auto_axis_limits(spec, axis)
+            auto_value = limits[0 if bound == 'min' else 1]
+            return f'Auto [{tick_label(auto_value)}]'
+
+        if key == 'scope':
+            override = self.axis_scope_overrides.get(level)
+            if override is None:
+                return f'Default ({self._configured_scope_label(level)})'
+            return override.title()
+
+        return ''
+
+    def _view_panel_text(self, spec):
+        if spec is None:
+            return 'VIEW\n\nPlot is being prepared…'
+
+        self._normalize_view_index()
+        items = self._view_items()
+        by_key = {
+            key: (index, label, disabled)
+            for index, (key, label, disabled) in enumerate(items)
+        }
+
+        lines = ['VIEW', '', 'X AXIS']
+        for key in ('x_scale', 'x_min', 'x_max'):
+            index, label, disabled = by_key[key]
+            prefix = '›' if index == self.view_index and not disabled else ' '
+            lines.append(f'{prefix} {label:<11} {self._view_value(key, spec)}')
+
+        lines.extend(['', 'Y AXIS'])
+        for key in ('y_scale', 'y_min', 'y_max'):
+            index, label, disabled = by_key[key]
+            prefix = '›' if index == self.view_index and not disabled else ' '
+            lines.append(f'{prefix} {label:<11} {self._view_value(key, spec)}')
+
+        lines.extend(['', 'GENERAL'])
+        for key in ('scope', 'reset'):
+            index, label, disabled = by_key[key]
+            prefix = '›' if index == self.view_index and not disabled else ' '
+            value = self._view_value(key, spec)
+            lines.append(f'{prefix} {label}' + (f'  {value}' if value else ''))
+
+        lines.extend([
+            '',
+            '↑↓ Select',
+            '←→ Change choice',
+            'Enter Edit / activate',
+            'Esc or V Close',
+            '',
+            'Session-only overrides',
+        ])
+        return '\n'.join(lines)
+
+    def _refresh_right_panel(self, spec=None):
+        current = self.spec if spec is None else spec
+        panel = self.query_one('#legend', Static)
+        if self.view_focus:
+            panel.update(self._view_panel_text(current))
+        elif current is not None:
+            panel.update(self._legend_text(current))
+        else:
+            panel.update('')
+
+    def _can_use_log(self, axis):
+        if self.spec is None:
+            return False
+        if axis == 'x' and getattr(self.spec, 'xticks', []):
+            return False
+
+        available = self.spec.metadata.get('_log_available', {}).get(axis)
+        if available is None:
+            from .plotting.axes import empirical_axis_values
+            values = empirical_axis_values(self.spec, axis)
+            available = bool(values) and all(value > 0 for value in values)
+
+        if not available:
+            return False
+
+        manual = self.axis_limit_overrides.get(
+            (self.selection.active, axis),
+            {},
+        )
+        return all(
+            value is None or value > 0
+            for value in (manual.get('min'), manual.get('max'))
+        )
+
+    async def _view_change(self, delta):
+        self._normalize_view_index()
+        key = self._view_items()[self.view_index][0]
+        level = self.selection.active
+
+        if key in ('x_scale', 'y_scale'):
+            axis = key[0]
+            current = self.axis_scale_overrides.get((level, axis))
+            target = cycle_choice(current, SCALE_CHOICES, delta)
+
+            if target == 'log' and not self._can_use_log(axis):
+                self.notify(
+                    f'Cannot use logarithmic {axis.upper()} scale: '
+                    'the displayed empirical data/uncertainty or a manual '
+                    'bound is non-positive.'
+                )
+                return
+
+            if target is None:
+                self.axis_scale_overrides.pop((level, axis), None)
+            else:
+                self.axis_scale_overrides[(level, axis)] = target
+
+            await self.redraw()
+            return
+
+        if key == 'scope':
+            current = self.axis_scope_overrides.get(level)
+            target = cycle_choice(current, SCOPE_CHOICES, delta)
+            if target is None:
+                self.axis_scope_overrides.pop(level, None)
+            else:
+                self.axis_scope_overrides[level] = target
+
+            await self.redraw()
+            return
+
+        if key in ('x_min', 'x_max', 'y_min', 'y_max'):
+            self.notify('Press Enter to edit this bound; type Auto to clear it.')
+
+    async def _view_activate(self):
+        self._normalize_view_index()
+        key = self._view_items()[self.view_index][0]
+
+        if key in ('x_scale', 'y_scale', 'scope'):
+            await self._view_change(1)
+            return
+
+        if key == 'reset':
+            level = self.selection.active
+            for axis in ('x', 'y'):
+                self.axis_scale_overrides.pop((level, axis), None)
+                self.axis_limit_overrides.pop((level, axis), None)
+            self.axis_scope_overrides.pop(level, None)
+            self.notify('View overrides reset to dataset defaults.')
+            await self.redraw()
+            return
+
+        if key in ('x_min', 'x_max', 'y_min', 'y_max'):
+            axis = key[0]
+            bound = 'min' if key.endswith('_min') else 'max'
+            self._open_axis_limit_editor(axis, bound)
+
+    def _open_axis_limit_editor(self, axis, bound):
+        if self.spec is None:
+            return
+        if axis == 'x' and getattr(self.spec, 'xticks', []):
+            self.notify('This X axis is categorical.')
+            return
+
+        current = self.axis_limit_overrides.get(
+            (self.selection.active, axis),
+            {},
+        ).get(bound)
+        title = f'{axis.upper()} {"minimum" if bound == "min" else "maximum"}'
+
+        def receive(result):
+            if result is not None:
+                self._receive_axis_limit(axis, bound, result)
+
+        self.push_screen(AxisLimitScreen(title, current), receive)
+
+    def _receive_axis_limit(self, axis, bound, result):
+        from .plotting.axes import axis_policy
+        from .ui.view_state import validate_bound_pair
+
+        if self.spec is None:
+            return
+
+        level = self.selection.active
+        key = (level, axis)
+        manual = dict(self.axis_limit_overrides.get(key, {}))
+
+        if result.get('mode') == 'auto':
+            manual.pop(bound, None)
+            if manual:
+                self.axis_limit_overrides[key] = manual
+            else:
+                self.axis_limit_overrides.pop(key, None)
+            asyncio.create_task(self.redraw())
+            return
+
+        value = result.get('value')
+        if value is None:
+            return
+
+        scale = axis_policy(self.spec, axis)[0]
+        candidate = dict(manual)
+        candidate[bound] = float(value)
+
+        automatic = self._auto_axis_limits(self.spec, axis)
+        lower = candidate.get('min')
+        upper = candidate.get('max')
+        effective_lower = automatic[0] if lower is None else lower
+        effective_upper = automatic[1] if upper is None else upper
+
+        try:
+            validate_bound_pair(effective_lower, effective_upper, scale)
+        except ValueError as exc:
+            self.notify(str(exc), severity='warning')
+            return
+
+        self.axis_limit_overrides[key] = candidate
+        asyncio.create_task(self.redraw())
+
+    def action_view(self):
+        if self.view_focus:
+            self.view_focus = False
+            self._refresh_right_panel()
+            return
+
+        if self.spec is None:
+            self.notify('View options are available once the plot is prepared.')
+            return
+
+        self.analysis_focus = False
+        self.fit_edit_mode = False
+        self.view_focus = True
+        self._normalize_view_index()
+        self.show_analysis()
+        self._refresh_right_panel()
 
     def _legend_text(self, spec):
         from .plotting.axes import (
@@ -966,14 +1380,7 @@ class PsyView(App):
             show_labels=False,
         )
 
-        self.query_one(
-            '#legend',
-            Static,
-        ).update(
-            self._legend_text(
-                spec
-            )
-        )
+        self._refresh_right_panel(spec)
 
         fit_text = spec.metadata.get(
             '_fit_display',
@@ -1123,10 +1530,16 @@ class PsyView(App):
                 valid = bool(values) and all(value > 0 for value in values)
                 if self.spec is not None:
                     valid = self.spec.metadata.get('_log_available', {}).get(axis, valid)
+                manual = self.axis_limit_overrides.get(key, {})
+                if valid and any(
+                    value is not None and value <= 0
+                    for value in (manual.get('min'), manual.get('max'))
+                ):
+                    valid = False
                 if not valid:
                     self.notify(
-                        f'{axis.upper()} log scale requires positive empirical data and uncertainty '
-                        'throughout the displayed row. Scale unchanged.'
+                        f'{axis.upper()} log scale requires positive empirical data, uncertainty, '
+                        'and manual bounds throughout the displayed row. Scale unchanged.'
                     )
                     return
             self.axis_scale_overrides[
@@ -1155,6 +1568,10 @@ class PsyView(App):
         )
 
     def action_analysis(self):
+        if self.view_focus:
+            self.view_focus = False
+            self._refresh_right_panel()
+
         if not hasattr(
             self.adapter,
             'interactive',
@@ -1232,6 +1649,11 @@ class PsyView(App):
             await self.redraw()
 
     def action_hierarchy_focus(self):
+        if self.view_focus:
+            self.view_focus = False
+            self._refresh_right_panel()
+            return
+
         self.analysis_focus = False
         self.fit_edit_mode = False
         self.show_analysis()
@@ -1300,6 +1722,10 @@ class PsyView(App):
         self.figure_processes.clear()
 
     async def action_previous(self):
+        if self.view_focus:
+            await self._view_change(-1)
+            return
+
         if self.fit_edit_mode:
             points = self._fit_points()
             if points:
@@ -1318,6 +1744,10 @@ class PsyView(App):
         await self.redraw()
 
     async def action_next(self):
+        if self.view_focus:
+            await self._view_change(1)
+            return
+
         if self.fit_edit_mode:
             points = self._fit_points()
             if points:
@@ -1336,18 +1766,29 @@ class PsyView(App):
         await self.redraw()
 
     async def action_child(self):
+        if self.view_focus:
+            self._view_move(1)
+            return
+
         self.analysis_focus = False
         self.fit_edit_mode = False
         self.selection.down()
         await self.redraw()
 
     async def action_parent(self):
+        if self.view_focus:
+            self._view_move(-1)
+            return
+
         self.analysis_focus = False
         self.fit_edit_mode = False
         self.selection.up()
         await self.redraw()
 
     async def action_first(self):
+        if self.view_focus:
+            return
+
         if self.fit_edit_mode:
             self.fit_cursor_index = 0
             await self.redraw()
@@ -1366,6 +1807,9 @@ class PsyView(App):
         await self.redraw()
 
     async def action_last(self):
+        if self.view_focus:
+            return
+
         if self.fit_edit_mode:
             points = self._fit_points()
             if points:
@@ -1388,6 +1832,10 @@ class PsyView(App):
         await self.redraw()
 
     async def action_enter(self):
+        if self.view_focus:
+            await self._view_activate()
+            return
+
         if self.fit_edit_mode:
             x_value = self._fit_cursor_x()
             toggler = getattr(
@@ -1560,6 +2008,11 @@ class PsyView(App):
             self.fit_enabled = False
             self.fit_edit_mode = False
             self.fit_cursor_index = 0
+            self.axis_scale_overrides.clear()
+            self.axis_limit_overrides.clear()
+            self.axis_scope_overrides.clear()
+            self.view_focus = False
+            self.view_index = 0
 
             self.selection.refresh()
             await self.redraw()

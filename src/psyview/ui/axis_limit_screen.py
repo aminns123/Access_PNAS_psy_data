@@ -9,7 +9,7 @@ from textual.widgets import Input, Static
 from .view_state import parse_axis_limit
 
 
-class AxisLimitScreen(ModalScreen[dict | None]):
+class AxisLimitScreen(ModalScreen):
     """Tiny numeric editor used by the keyboard-first View panel."""
 
     CSS = """

@@ -1,0 +1,36 @@
+PsyView View panel — DIRECT EXTRACT version
+
+This version does NOT use a patcher.
+
+INSTALL
+1. Close PsyView.
+2. Extract this ZIP directly into the ROOT of Access_PNAS_psy_data.
+3. When Windows asks, choose Replace the files in the destination.
+4. Start PsyView normally with run_psyview.bat.
+5. The footer should now show: V View
+   X/Y still work as hidden backwards-compatible shortcuts.
+
+VIEW CONTROLS
+V            Open/close View options
+Up/Down      Select a setting
+Left/Right   Change Scale or Limit scope
+Enter        Edit minimum/maximum or activate/reset
+Escape       Close View and restore normal hierarchy arrows
+
+Numeric limits accept values such as:
+-1
+1
+0.001
+2.5
+1e3
+Auto
+
+The settings are session-only. Reset defaults restores the dataset/YAML axis
+policy for the current hierarchy level.
+
+This ZIP was built from the src.zip supplied by the user, not from an older
+GitHub copy. It preserves the supplied local source and only adds the View UI
+integration plus the corrected View help text.
+
+No empirical-data files are included or modified.
+No GitHub write is performed.
