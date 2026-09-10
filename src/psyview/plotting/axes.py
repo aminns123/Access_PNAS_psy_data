@@ -262,19 +262,19 @@ def axis_policy(spec, axis):
 
 
 
-def shared_axis_limits(specs, axis, policy=None):
+def shared_axis_limits(specs, axis):
     """Return one limit pair encompassing every sibling plot in a row.
 
-    The final union can then be enlarged/rounded by an optional declarative
-    axis policy from the dataset YAML.  The policy is presentation metadata;
-    it never clips sibling data.
+    Each sibling first gets its normal local axis policy.  The shared row
+    limits are then the union of those resolved limits.  This preserves the
+    existing readable rounding/padding while guaranteeing that left/right
+    navigation within one hierarchy row never changes the displayed range.
     """
     resolved = []
-    resolved_scales = []
 
     for spec in specs:
         try:
-            scale, limits, _ = axis_policy(
+            _, limits, _ = axis_policy(
                 spec,
                 axis,
             )
@@ -294,54 +294,98 @@ def shared_axis_limits(specs, axis, policy=None):
                     float(limits[1]),
                 )
             )
-            resolved_scales.append(scale)
 
     if not resolved:
         return None
 
-    limits = (
+    return (
         min(item[0] for item in resolved),
         max(item[1] for item in resolved),
     )
 
-    # All sibling specs have already had the same declared/user scale applied.
-    scale = (
-        resolved_scales[0]
-        if resolved_scales
-        else 'linear'
-    )
 
-    return apply_declared_limit_policy(
-        limits,
-        scale,
-        policy,
-    )
+def raw_axis_values(specs, axis, scale=None):
+    """Collect physical plotted values across sibling specs.
 
+    Limits are derived from the actual plotted coordinates, not from another
+    round of already-padded limits. This avoids cumulative expansion.
 
-def apply_declared_limit_policy(limits, scale, policy=None):
-    """Expand row limits according to optional declarative display policy.
-
-    `preferred_min` / `preferred_max` are SOFT bounds:
-      - they enlarge the viewing window when useful;
-      - they never clip data already outside that window.
-
-    `rounding` may be:
-      - auto      : keep the already-resolved limits
-      - decades   : round log limits outward to powers of ten
-      - nice      : round outward using readable 1/2/5-style values
-
-    Example for a CSF policy with preferred 10..1000:
-      data 18..850  -> 10..1000
-      data 8..850   -> 1..1000
-      data 18..1800 -> 10..10000
+    Guide lines in the orthogonal direction do not define a data extent:
+      - a vertical line does not define Y range;
+      - a horizontal line does not define X range.
     """
-    if not policy:
-        return tuple(map(float, limits))
+    values = []
+
+    for spec in specs:
+        for series in spec.series:
+            if axis == 'y' and series.kind == 'vline':
+                continue
+            if axis == 'x' and series.kind == 'hline':
+                continue
+
+            for value in getattr(series, axis):
+                if finite(value):
+                    value = float(value)
+                    if scale == 'log' and value <= 0:
+                        continue
+                    values.append(value)
+
+    return values
+
+
+def limits_from_values(values, axis, scale):
+    """One readable limit calculation from a union of raw sibling values."""
+    values = [
+        float(value)
+        for value in values
+        if finite(value)
+        and (
+            scale != 'log'
+            or float(value) > 0
+        )
+    ]
+
+    if not values:
+        return None
+
+    if axis == 'y':
+        return nice_y_limits(
+            values,
+            scale,
+        )
+
+    return padded_limits(
+        values,
+        scale,
+    )
+
+
+def apply_declared_limit_policy(
+    limits,
+    scale,
+    policy=None,
+):
+    """Apply an optional YAML display policy without ever clipping data.
+
+    preferred_min/preferred_max are SOFT display bounds: they may enlarge the
+    range, never shrink it past the data-containing range.
+
+    For log + `rounding: decades`, limits move outward to powers of ten.
+
+    Examples:
+        row data 18..850 + preferred 10..1000 -> 10..1000
+        row data 8..850  + preferred 10..1000 -> 1..1000
+        row data 18..1800                     -> 10..10000
+    """
+    if limits is None:
+        return None
 
     lo, hi = map(float, limits)
-    rounding = str(
-        policy.get('rounding', 'auto')
-    ).lower()
+    policy = (
+        policy
+        if isinstance(policy, dict)
+        else {}
+    )
 
     preferred_min = policy.get(
         'preferred_min'
@@ -350,25 +394,48 @@ def apply_declared_limit_policy(limits, scale, policy=None):
         'preferred_max'
     )
 
-    if preferred_min is not None and finite(preferred_min):
-        preferred_min = float(preferred_min)
+    if (
+        preferred_min is not None
+        and finite(preferred_min)
+    ):
+        preferred_min = float(
+            preferred_min
+        )
         if (
             scale != 'log'
             or preferred_min > 0
         ):
-            lo = min(lo, preferred_min)
+            lo = min(
+                lo,
+                preferred_min,
+            )
 
-    if preferred_max is not None and finite(preferred_max):
-        preferred_max = float(preferred_max)
+    if (
+        preferred_max is not None
+        and finite(preferred_max)
+    ):
+        preferred_max = float(
+            preferred_max
+        )
         if (
             scale != 'log'
             or preferred_max > 0
         ):
-            hi = max(hi, preferred_max)
+            hi = max(
+                hi,
+                preferred_max,
+            )
+
+    rounding = str(
+        policy.get(
+            'rounding',
+            'auto',
+        )
+    ).lower()
 
     if scale == 'log':
         if lo <= 0 or hi <= 0:
-            return lo, hi
+            return limits
 
         if rounding == 'decades':
             lo = 10.0 ** math.floor(
@@ -383,20 +450,49 @@ def apply_declared_limit_policy(limits, scale, policy=None):
             hi = _nice_log_ceil(hi)
 
     elif rounding in ('nice', 'decades'):
-        # "decades" is a log concept; if the user temporarily switches this
-        # configured axis to linear, fall back to ordinary readable linear
-        # rounding rather than applying powers of ten.
+        # If a user temporarily changes a configured log axis to linear,
+        # do normal linear rounding; never reuse decade semantics.
         if hi > lo:
             step = _nice_linear_step(
                 (hi - lo) / 4.0
             )
-            lo = math.floor(lo / step) * step
-            hi = math.ceil(hi / step) * step
+            lo = math.floor(
+                lo / step
+            ) * step
+            hi = math.ceil(
+                hi / step
+            ) * step
 
     if not lo < hi:
-        return tuple(map(float, limits))
+        return limits
 
     return lo, hi
+
+
+def shared_axis_limits_for_scale(
+    specs,
+    axis,
+    scale,
+    policy=None,
+):
+    """Resolve one fixed row range directly from all sibling raw values."""
+    values = raw_axis_values(
+        specs,
+        axis,
+        scale,
+    )
+
+    limits = limits_from_values(
+        values,
+        axis,
+        scale,
+    )
+
+    return apply_declared_limit_policy(
+        limits,
+        scale,
+        policy,
+    )
 
 def anchor_ticks(limits, scale='linear'):
     """Return guaranteed lower / middle / upper display ticks.
