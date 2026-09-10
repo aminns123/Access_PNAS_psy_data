@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Container
 from textual.widgets import Static, Footer
 from textual_plotext import PlotextPlot
 
@@ -12,6 +12,7 @@ import textwrap
 
 from .ui.hierarchy import Hierarchy
 from .ui.help_screen import HelpScreen
+from .ui.busy import BusyOverlay
 from .plotting.terminal import (
     TerminalPlotRenderer,
     ScientificPlot,
@@ -46,11 +47,13 @@ class PsyView(App):
         height: 30;
         align-horizontal: center;
     }
-    #plot {
+    #plot-stage {
         width: 74;
         height: 29;
         min-height: 18;
+        layers: plot busy;
     }
+    #plot { width: 100%; height: 100%; layer: plot; }
     #legend {
         width: 34;
         height: 29;
@@ -100,7 +103,7 @@ class PsyView(App):
     Screen.compact .choice-row { height: 2; }
     Screen.compact .choice { height: 1; border: none; }
     Screen.compact #plotbox { width: 100%; height: 19; }
-    Screen.compact #plot { width: 70%; height: 18; }
+    Screen.compact #plot-stage { width: 70%; height: 18; }
     Screen.compact #legend { width: 30%; height: 18; padding: 0 1; }
     Screen.compact #fitinfo { max-height: 3; }
     Screen.compact #info { max-height: 2; }
@@ -181,7 +184,9 @@ class PsyView(App):
         )
 
         with Horizontal(id='plotbox'):
-            yield ScientificPlot(id='plot')
+            with Container(id='plot-stage'):
+                yield ScientificPlot(id='plot')
+                yield BusyOverlay(id='fit-spinner')
             yield Static(
                 id='legend',
                 markup=False,
@@ -586,9 +591,13 @@ class PsyView(App):
     
         return spec
 
+    def set_busy(self, busy, label='Working…'):
+        self.query_one(BusyOverlay).set_busy(busy, label)
+
     async def redraw(self):
         self.plot_generation += 1
         generation = self.plot_generation
+        self.set_busy(False)
 
         if self.analysis_task:
             self.analysis_task.cancel()
@@ -633,6 +642,7 @@ class PsyView(App):
         )
 
         if background_work:
+            self.set_busy(True, 'Fitting…' if use_fit else 'Computing…')
             adapter = self.adapter
             level = self.selection.active
             filters = self.selection.filters()
@@ -734,6 +744,9 @@ class PsyView(App):
                         ).update(
                             f'Analysis unavailable: {exc}'
                         )
+                finally:
+                    if generation == self.plot_generation:
+                        self.set_busy(False)
 
             self.analysis_task = (
                 asyncio.create_task(
