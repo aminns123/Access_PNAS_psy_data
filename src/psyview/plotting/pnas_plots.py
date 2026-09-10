@@ -202,16 +202,6 @@ def pnas_threshold_box_plot(
     luminance = filters['luminance_cd_m2']
     frequency = filters['spatial_frequency_cpd']
 
-    reference = (
-        trials.contrast_normalized_source.tolist()
-        if (
-            trials is not None
-            and not trials.empty
-            and 'contrast_normalized_source' in trials
-        )
-        else None
-    )
-
     spec = grouped_box_plot(
         stairs,
         category_column='spatial_frequency_cpd',
@@ -224,17 +214,17 @@ def pnas_threshold_box_plot(
         xlabel='Spatial frequency (cpd)',
         ylabel='Staircase threshold (normalized source contrast)',
         yscale='log',
-        reference_values=reference,
+        reference_values=None,
         notes_prefix=(
             notes_prefix
-            + 'The y-axis inherits the raw staircase trial-contrast range for '
-              'this selected spatial frequency, so the threshold distribution '
-              'is shown on the same scale as the individual staircase view. '
+            + 'The y-axis is set from the minimum and maximum staircase '
+              'thresholds at this selected spatial frequency with a small '
+              'display margin. '
         ),
         metadata={
             **filters,
-            'Y-axis reference source':
-                'trial-level normalized source contrast for current selection',
+            'Y-axis basis':
+                'current-row staircase threshold range',
         },
         mean_label='Arithmetic mean threshold',
     )

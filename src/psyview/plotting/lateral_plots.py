@@ -151,21 +151,11 @@ def lateral_grouped_threshold_box_plot(
             f'{position:g}° — staircase threshold distributions'
         )
 
-    reference = (
-        trials.normalized_contrast.tolist()
-        if (
-            trials is not None
-            and not trials.empty
-            and 'normalized_contrast' in trials
-        )
-        else None
-    )
-
     metadata = {
         **filters,
         **(extra_metadata or {}),
-        'Y-axis reference source':
-            'trial-level normalized contrast for the current selection',
+        'Y-axis basis':
+            'current-row staircase threshold range',
     }
 
     return grouped_box_plot(
@@ -177,13 +167,12 @@ def lateral_grouped_threshold_box_plot(
         xlabel='Experiment',
         ylabel='Staircase threshold (normalized digital contrast)',
         yscale='log',
-        reference_values=reference,
+        reference_values=None,
         notes_prefix=(
             notes_prefix
             + 'Category labels are read directly from the repository. '
-              'The y-axis inherits the corresponding staircase trial-contrast '
-              'range so the threshold distribution stays in the context of '
-              'the raw staircase scale. '
+              'The y-axis is set from the minimum and maximum staircase '
+              'thresholds in this row with a small display margin. '
         ),
         metadata=metadata,
         mean_label='Arithmetic mean threshold',

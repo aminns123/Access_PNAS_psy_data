@@ -1,36 +1,48 @@
-PNAS adapter hotfix
-===================
+PsyView box-plot y-limit cosmetic patch
+=======================================
 
-You do NOT need to revert the whole project.
+REPLACE:
+    src/psyview/plotting/boxplots.py
+    src/psyview/plotting/lateral_plots.py
+    src/psyview/plotting/pnas_plots.py
 
-Replace only:
+OPTIONAL TEST:
+    tests/test_boxplot_threshold_ylim.py
 
-    src/psyview/data/pnas_psychophysics.py
+CHANGE
+------
+The threshold-distribution box plots no longer inherit the very broad raw
+staircase trial-contrast y-axis range.
 
-with the file in this ZIP.
+For EACH CURRENT ROW / SELECTION, the box-plot y limits are now calculated
+from the threshold values that are actually visible in that box plot:
 
-This fixes the indentation/nesting error from the previous PNAS box-plot patch.
+    lower limit = current-row minimum threshold - small display margin
+    upper limit = current-row maximum threshold + small display margin
 
-The intended structure is restored:
+Because these contrast axes are normally logarithmic, PsyView uses its existing
+log-aware padded_limits() rule with a 7% margin in log space. This gives a
+small proportional gap below the minimum and above the maximum without
+distorting the log axis.
 
-    class PNASAdapter:
-        ...
-        def get_plot(...):
-            ...
-        def interactive_threshold_box_plot(...):
-            ...
-        def archived_plot(...):
-            ...
+Included AND excluded threshold points are considered when setting the limits,
+because excluded red-x points remain visible and should never be clipped.
 
-So all existing PSF/CSF plotting should return, while keeping:
+This applies through the SAME generic grouped_box_plot helper to:
+    - lateral Position side-by-side boxes
+    - lateral Experiment single box
+    - PNAS/CSF Spatial-frequency single box
+    - future adapters using grouped_box_plot
 
-    Subject          -> PSF vs luminance
-    Luminance        -> CSF
-    Spatial frequency-> threshold box plot
-    Staircase        -> individual trajectory/reversals
+The actual box statistics are unchanged:
+    Q1-Q3
+    median
+    observed min-max whiskers
+    individual thresholds
+    arithmetic-mean diamond
 
-No empirical data files are changed.
+No data or analysis calculations are changed.
 
-Run:
-
+RUN
+---
     .\run_psyview.bat
