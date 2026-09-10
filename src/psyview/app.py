@@ -522,7 +522,7 @@ class PsyView(App):
                         level,
                         sibling_filters,
                         analysis,
-                        use_fit,
+                        False,
                         None,
                         False,
                     )
