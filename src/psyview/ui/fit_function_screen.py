@@ -62,7 +62,7 @@ class FitFunctionScreen(ModalScreen):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
-        Binding("ctrl+d", "restore_default", "Default", show=False),
+        Binding("ctrl+r", "restore_default", "Default", show=False),
     ]
 
     def __init__(
