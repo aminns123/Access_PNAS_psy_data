@@ -1,107 +1,30 @@
-PsyView log-axis rendering fix
-==============================
+PsyView installation
+====================
 
-REPLACE ONLY:
-    src/psyview/plotting/axes.py
-    src/psyview/plotting/terminal.py
+These instructions replace the older patch-copy notes.
+Use the current checkout as a whole; do not replace individual plotting files.
 
-Do NOT replace app.py or the YAML files again.
+Python: minimum 3.12; standard CPython 3.13 recommended.
 
-WHAT WAS ACTUALLY WRONG
------------------------
-The screenshots made the bug unambiguous.
+Windows 10/11:
+  Install Python from https://www.python.org/downloads/windows/
+  Run run_psyview.bat
 
-PsyView's terminal renderer did this on a log axis:
+macOS Intel / Apple Silicon:
+  Install the Python 3.13 macOS universal2 installer from python.org.
+  In Terminal, cd into the extracted/cloned PsyView folder, then run:
+    chmod +x run_psyview.sh
+    ./run_psyview.sh
+  Alternatively: sh run_psyview.sh
+  Homebrew is not required.
 
-    limits in real data units
-        -> log10(limits)
-        -> Plotext.xlim / Plotext.ylim
+Linux:
+  Install Python 3.12+ with venv/pip support, then: sh run_psyview.sh
 
-But Plotext's log ruler already performs the logarithmic transform internally.
-The limits were therefore being supplied in the wrong coordinate system.
+First run creates .venv and installs the project. Unchanged later launches work
+without pip/network access. Do not transfer .venv between machines or platforms.
+Select your separate empirical repository in the folder browser.
 
-That explains every screenshot:
-
-1. PSF
-   legend says X = 5 .. 1000
-   renderer actually gave Plotext about 0.70 .. 3
-
-   real luminances are 10 .. 403, so essentially all data were outside the
-   numerical window and disappeared.
-
-2. CSF
-   legend says X = 0.05 .. 100
-   renderer actually gave Plotext about -1.30 .. 2
-
-   only spatial frequencies <= about 2 remained visible, exactly as shown.
-
-3. Threshold box
-   legend says Y = 0.002 .. 0.02
-   renderer actually gave Plotext about -2.70 .. -1.70
-
-   thresholds around 0.004 were outside that raw numerical interval, so the
-   box vanished.
-
-4. Staircase
-   legend says Y = 0.001 .. 1
-   renderer actually gave Plotext -3 .. 0
-
-   contrasts around 0.03 then landed close to the top of the wrong numerical
-   range, matching the screenshot.
-
-THE FIX
--------
-TerminalPlotRenderer now passes physical limits directly:
-
-    Plotext.xlim(5, 1000)
-    Plotext.ylim(10, 1000)
-
-and lets Plotext perform the log mapping itself.
-
-SECOND BUG FIXED
-----------------
-The CSF screenshot also showed:
-
-    Y scale: linear (dataset config)
-
-despite the YAML declaring log.
-
-That happened because axis_policy changed an entire requested log axis to
-linear if ANY series contained a zero/negative value. An auxiliary/helper
-curve can have a non-positive tail even though all empirical CSF points are
-positive.
-
-New rule:
-
-    requested log + any positive plottable values
-        -> remain log
-        -> non-positive coordinates are omitted from the terminal log plot
-
-    requested log + no positive values whatsoever
-        -> fall back to linear
-
-This keeps CSF scientifically logarithmic without allowing an invalid helper
-point to destroy the scale.
-
-WHAT STAYS UNCHANGED
---------------------
-- fixed x/y ranges across sibling conditions in each hierarchy row
-- PNAS CSF YAML: log x, log y, preferred 10..1000, decade expansion
-- box plots: local categorical x, shared y
-- min/middle/max y labels
-- right-hand AXES description
-- X/Y user scale controls
-- threshold/fit/error calculations
-- empirical data
-- GitHub repositories
-
-VALIDATION
-----------
-The patch includes regression tests for:
-- PSF shared log x range 5..1000 staying in physical coordinates
-- a CSF remaining log when an auxiliary curve contains a negative tail
-- fallback to linear only when a requested log axis has no positive values
-
-RUN
----
-    .\run_psyview.bat
+For manual installation, dataset/export paths, GUI/Tk troubleshooting and
+Apple Silicon details, see README.md, section "Running PsyView".
+Dependency audit and platform verification notes are in PORTABILITY.md.

@@ -1,0 +1,39 @@
+name: Cross-platform smoke tests
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.12', '3.13']
+    runs-on: ${{ matrix.os }}
+    env:
+      MPLBACKEND: Agg
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: python -m pip install -e ".[test]"
+      - name: Imports and CLI
+        run: python -m psyview --help
+      - name: Portability, synthetic adapters, calculations and plot specifications
+        run: >-
+          python -m pytest -q
+          tests/test_portability.py tests/test_launcher.py
+          tests/test_boolean_columns.py tests/test_inference.py
+          tests/test_empirical_axis_limits.py tests/test_lateral_fit.py
+          tests/test_shared_row_axes.py tests/test_declarative_axis_policy.py
+      - name: Unix launcher smoke test
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x run_psyview.sh
+          ./run_psyview.sh --help

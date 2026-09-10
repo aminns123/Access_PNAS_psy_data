@@ -14,6 +14,27 @@ import numpy as np
 LOG_PATH = Path(tempfile.gettempdir()) / 'psyview.log'
 
 
+def cleanup_plot_payload(process):
+    """Remove a payload even if the child exited before it could read it."""
+    path = getattr(process, '_psyview_payload', None)
+    if path is not None:
+        Path(path).unlink(missing_ok=True)
+
+
+def close_plot_process(process):
+    """Close and reap a GUI child on application exit, without a shell."""
+    try:
+        if process.poll() is None:
+            process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
+    finally:
+        cleanup_plot_payload(process)
+
+
 def json_scalar(value):
     if isinstance(value, np.generic):
         return value.item()
@@ -307,28 +328,25 @@ class MatplotlibPlotRenderer:
                 'a',
                 encoding='utf-8',
             ) as log:
+                kwargs = {}
+                if sys.platform == 'win32':
+                    kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
                 process = subprocess.Popen(
                     command,
                     stderr=log,
                     stdout=log,
-                    creationflags=getattr(
-                        subprocess,
-                        'CREATE_NO_WINDOW',
-                        0,
-                    ),
+                    **kwargs,
                 )
 
-        except OSError:
+        except Exception:
             Path(path).unlink(missing_ok=True)
             raise
 
+        process._psyview_payload = path
         return process
 
 
 def show_payload(path, close_after=None):
-    import matplotlib
-    from matplotlib import pyplot as plt
-
     path = Path(path)
 
     try:
@@ -337,6 +355,10 @@ def show_payload(path, close_after=None):
         )
     finally:
         path.unlink(missing_ok=True)
+
+    # Read/close/delete the payload before importing an optional GUI backend.
+    import matplotlib
+    from matplotlib import pyplot as plt
 
     payload['series'] = [
         Series(**series)

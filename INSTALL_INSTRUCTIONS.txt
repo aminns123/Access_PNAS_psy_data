@@ -1,148 +1,30 @@
-PsyView lateral-sensitivity / general-detector patch
-====================================================
+PsyView installation
+====================
 
-Prepared from the current public main branch of:
-    aminns123/Access_PNAS_psy_data
+These instructions replace the older patch-copy notes.
+Use the current checkout as a whole; do not replace individual plotting files.
 
-This bundle is intended to be copied into your LOCAL PsyView checkout.
-It does NOT modify either empirical repository.
+Python: minimum 3.12; standard CPython 3.13 recommended.
 
-IMPORTANT
----------
-1. Make a Git commit or backup of your current PsyView folder first.
-2. Keep the empirical CSF and lateral repositories external/read-only.
-3. Do NOT delete PNAS_Psychopysics_data-main as part of this patch.
-   Remove that obsolete tracked snapshot only later, after verification.
+Windows 10/11:
+  Install Python from https://www.python.org/downloads/windows/
+  Run run_psyview.bat
 
-COPY / REPLACE
---------------
-Copy this bundle over the root of Access_PNAS_psy_data, preserving paths.
+macOS Intel / Apple Silicon:
+  Install the Python 3.13 macOS universal2 installer from python.org.
+  In Terminal, cd into the extracted/cloned PsyView folder, then run:
+    chmod +x run_psyview.sh
+    ./run_psyview.sh
+  Alternatively: sh run_psyview.sh
+  Homebrew is not required.
 
-NEW FILES:
-    src/psyview/data/inspector.py
-    src/psyview/data/lateral_sensitivity.py
-    src/psyview/plotting/lateral_plots.py
-    src/psyview/analysis/lateral_interactive.py
-    src/psyview/configs/lateral_sensitivity.yaml
-    configs/lateral_sensitivity.yaml
-    tests/test_lateral.py
-    tests/test_inference.py
+Linux:
+  Install Python 3.12+ with venv/pip support, then: sh run_psyview.sh
 
-REPLACE EXISTING:
-    src/psyview/data/detector.py
-    src/psyview/data/config.py
-    src/psyview/data/registry.py
-    src/psyview/data/pnas_psychophysics.py
-    src/psyview/app.py
-    src/psyview/ui/help_screen.py
-    src/psyview/__main__.py
+First run creates .venv and installs the project. Unchanged later launches work
+without pip/network access. Do not transfer .venv between machines or platforms.
+Select your separate empirical repository in the folder browser.
 
-NO CHANGE REQUIRED:
-    pyproject.toml
-    run_psyview.bat
-    state.py
-    models.py
-    csv_adapter.py
-    hierarchy.py
-    terminal.py
-    matplotlib_plots.py
-    axes.py
-    existing PNAS analysis/interactive.py
-
-WHY NO pyproject.toml CHANGE?
------------------------------
-No new third-party dependency is introduced. Your editable install should see
-the new Python modules immediately. Because the launcher hashes pyproject.toml,
-it should not need an internet-dependent reinstall merely for this source patch.
-
-FIRST TEST
-----------
-From the PsyView project folder:
-
-    .\.venv\Scripts\python.exe -m pytest -q
-
-Then launch:
-
-    run_psyview.bat
-
-Browse to your EXTERNAL:
-    Lateral_Sensitivty_data_2024
-
-It should now be labelled:
-    Lateral sensitivity / ISF dataset
-
-EXPECTED LATERAL HIERARCHY
---------------------------
-Subject
-  -> Luminance
-      -> Position
-          -> Experiment (base/flanker)
-              -> Staircase
-
-EXPECTED ARCHIVED PLOTS
------------------------
-Subject:
-    archived ISF endpoint(s) vs luminance
-
-Luminance:
-    R(x) = ln(S_flanker / S_base) vs distance from flanker edge
-    with archived spread/2 display bars
-
-Position:
-    Base vs Flanker component sensitivities
-
-Experiment:
-    all staircases for base or flanker at that position
-
-Staircase:
-    trial-by-trial normalized contrast, detected reversals,
-    final-five diamonds, archived geometric-mean threshold
-
-INTERACTIVE ANALYSIS
---------------------
-CSF/PSF:
-    median of final N reversals
-
-Lateral:
-    geometric mean of final N reversals
-
-For lateral data, interactive N propagates through:
-    staircase threshold
-      -> mean threshold by position
-      -> sensitivity
-      -> ln(S_flanker / S_base)
-      -> lateral profile
-
-It deliberately DOES NOT claim to recompute a historical ISF endpoint.
-The subject-level panel remains an explicitly labelled archived ISF reference
-in interactive mode, because the lateral archive documents unresolved
-historical fit/input linkage.
-
-GENERIC DETECTION
------------------
-The inspector can also identify a conservative one-table hierarchy in an
-unknown structured CSV repository. Generic mode permits hierarchy navigation
-but DOES NOT guess scientific x/y variables or derived analyses.
-
-IF SOMETHING FAILS
-------------------
-Run:
-
-    .\.venv\Scripts\python.exe -m psyview --debug
-
-Direct lateral validation:
-
-    .\.venv\Scripts\python.exe -m psyview --data-root "PATH\TO\Lateral_Sensitivty_data_2024"
-
-Structural report:
-
-    .\.venv\Scripts\python.exe -m psyview --data-root "PATH\TO\Lateral_Sensitivty_data_2024" --detect
-
-Send any traceback/error back to ChatGPT.
-
-SAFETY
-------
-The patch reads selected dataset files only. Interactive calculations operate
-on dataframe copies/in memory. No empirical CSV is written.
-
-The patch intentionally does not remove the old embedded PNAS archive yet.
+For manual installation, dataset/export paths, GUI/Tk troubleshooting and
+Apple Silicon details, see README.md, section "Running PsyView".
+Dependency audit and platform verification notes are in PORTABILITY.md.

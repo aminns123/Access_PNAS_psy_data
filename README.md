@@ -2,21 +2,134 @@
 
 Read-only terminal explorer for the PNAS psychophysics archive.
 
-Use Python 3.12 or newer. On Windows, run `run_psyview.bat`, or create
-a virtual environment and run `python -m pip install -e ".[test]"` followed
-by `python -m psyview`. Startup opens a keyboard dataset browser. Choose your
-external empirical repository, or use `--data-root PATH` to validate and open
-it directly. No scientific data are copied. Detection uses structure and
-column headers, not folder names. The browser starts at the last dataset's
-parent, then the project parent/current directory, then home. Preferences
-live in the per-user PsyView settings folder, never in the project or dataset.
+## Running PsyView
+
+Use **standard CPython 3.13 (recommended), minimum 3.12**. The existing Python
+minimum and dependency ranges are unchanged. Windows 10/11, macOS Intel and
+Apple Silicon, and Linux use the same Python application. First setup needs
+internet access to install dependencies; later unchanged launches work offline.
+Git is optional: a downloaded ZIP works after extraction. Keep empirical data
+in a separate folder; PsyView reads it without modifying it.
+
+### Windows
+
+Install Python from [python.org](https://www.python.org/downloads/windows/),
+including the Python launcher, then double-click `run_psyview.bat` or run:
+
+```bat
+run_psyview.bat
+```
+
+Windows Terminal is recommended. The existing Windows launcher is retained.
+
+### macOS (Intel or Apple Silicon)
+
+Install the standard Python 3.13 **macOS universal2 installer** from
+[python.org](https://www.python.org/downloads/macos/). It runs natively on Intel
+and Apple Silicon (M1/M2/M3/M4 and later ARM64 Macs); Homebrew is not required.
+Open a new Terminal window after installing. Then:
+
+```sh
+git clone https://github.com/aminns123/Access_PNAS_psy_data.git
+cd Access_PNAS_psy_data
+chmod +x run_psyview.sh
+./run_psyview.sh
+```
+
+For a ZIP download, `cd` into the extracted folder instead. The `chmod` step is
+needed if the download/checkout did not preserve execute permission; alternatively
+use `sh run_psyview.sh`. Paths containing spaces are supported. The launcher uses
+`.venv/bin/python` directly and creates the environment when needed. To choose a
+particular Python on first setup:
+
+```sh
+PSYVIEW_PYTHON="/path/to/python3.13" ./run_psyview.sh
+```
+
+Use a native ARM64 Python/Terminal on Apple Silicon. Do not copy `.venv` between
+computers, architectures or operating systems. An incompatible local environment
+is preserved as `.venv.incompatible-*` and replaced. On macOS, allow Terminal access
+to Documents/Desktop or removable storage if prompted when browsing your data.
+
+### Linux
+
+Install Python 3.12+ with `venv`/pip support using your distribution's packages,
+then run `sh run_psyview.sh`. Debian/Ubuntu may require `python3-venv`; Tk support
+(`python3-tk`) is optional for Matplotlib windows. A desktop session is needed for
+GUI windows, but terminal plots and PNG export also work without one.
+
+### Choosing data and exporting
+
+Startup opens a keyboard folder browser. Select the external empirical repository,
+or supply paths directly (quote paths with spaces):
+
+```sh
+./run_psyview.sh --data-root "/Users/name/Research/PNAS data" --export-dir "/Users/name/psyview-exports"
+```
+
+On Windows pass the same options to `run_psyview.bat` with Windows paths.
+The default export directory is `psyview-exports` in your home folder. PNG names
+use portable timestamps, independently of display titles. Detection uses structure
+and column headers, not folder names. Preserve the archive's exact filename case.
+The browser starts at the last dataset's parent, then the project parent/current
+directory, then home. Preferences remain in per-user storage outside the dataset
+(`APPDATA`/`LOCALAPPDATA` on Windows; XDG directories or `~/.config/PsyView` and
+`~/.cache/PsyView/cache` on macOS/Linux).
+
+### Manual installation fallback
+
+Windows (Command Prompt):
+
+```bat
+py -3.13 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e .
+.venv\Scripts\python.exe -m psyview
+```
+
+macOS/Linux (ensure `python3 --version` is 3.12+):
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m psyview
+```
+
+Add `--data-root PATH` to the final command to bypass the browser.
+
+### Matplotlib windows and terminal fonts
+
+**M** opens a separate process using the same environment Python. Matplotlib
+chooses its GUI backend; PsyView does not force one. MacOSX, TkAgg or QtAgg may be
+used depending on your installation. **S** saves PNG without requiring a GUI.
+If M fails, PsyView remains usable and reports the temporary `psyview.log` path.
+Check the selected backend and, optionally, test Tk:
+
+```sh
+.venv/bin/python -c "import matplotlib; print(matplotlib.get_backend())"
+.venv/bin/python -m tkinter
+```
+
+On Windows replace `.venv/bin/python` with `.venv\Scripts\python.exe`.
+Python.org macOS installers [include their own Tcl/Tk](https://www.python.org/download/mac/tcltk/).
+For Homebrew Python 3.13 only, missing Tk can optionally be installed with
+[`brew install python-tk@3.13`](https://formulae.brew.sh/formula/python-tk@3.13)
+(use a matching version). An explicitly set `MPLBACKEND=Agg` disables windows;
+unset it for automatic selection. See the
+[Matplotlib backend guide](https://matplotlib.org/stable/users/explain/figure/backends.html).
+
+Keep the terminal's normal UTF-8 encoding and use a Unicode-capable monospace
+font in Windows Terminal, macOS Terminal or iTerm2. Symbols such as ●, ◆ and →
+are retained; a missing glyph is a font/display issue. Do not force a legacy
+ASCII terminal encoding. Quit with Q: PsyView closes its Matplotlib child windows
+and cancels queued analysis. A calculation already running in a worker thread
+finishes before Python exits; large fits can therefore delay final shutdown.
 
 Browser: Up/Down select; Enter/Right opens a dataset or enters an ordinary
 directory; Left/Backspace goes to the parent; Home/End jumps; R refreshes;
 Q exits. The highlighted folder is inspected and cached, with supported-dataset
 details shown below the list. Use current folder opens a dataset already entered.
 
-The Windows launcher installs dependencies only during initial setup, after
+Both launchers install dependencies only during initial setup, after
 `pyproject.toml` changes, or when an import check fails. It records the SHA-256
 of the successfully installed configuration in `.venv/.psyview_pyproject_hash`.
 Unchanged launches run no pip commands and work offline. Setup bootstraps the

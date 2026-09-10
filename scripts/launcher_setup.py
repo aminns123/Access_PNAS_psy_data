@@ -1,4 +1,4 @@
-"""Offline startup gate and explicit setup/update for the Windows launcher."""
+"""Shared offline startup gate and setup/update for Windows and Unix launchers."""
 from pathlib import Path
 import hashlib
 import importlib
@@ -109,7 +109,7 @@ def create_environment(root=ROOT):
     root = root.resolve()
     target = root / '.venv'
     if target.exists():
-        # This branch is called only after the BAT rejects the existing Python.
+        # Called only after a launcher rejects the existing environment Python.
         # Keep the old environment for recovery; never recursively delete it.
         if target.is_symlink() or target.resolve().parent != root:
             raise ValueError('Refusing to move an environment outside the project root.')

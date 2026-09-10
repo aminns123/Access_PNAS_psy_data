@@ -216,18 +216,24 @@ class PsyView(App):
     def check_figures(self):
         from .plotting.matplotlib_plots import (
             LOG_PATH,
+            cleanup_plot_payload,
         )
 
         for process in self.figure_processes[:]:
             code = process.poll()
             if code is not None:
+                try:
+                    cleanup_plot_payload(process)
+                except OSError:
+                    logger.warning('Could not remove plot payload', exc_info=True)
                 self.figure_processes.remove(
                     process
                 )
                 if code:
                     self.notify(
                         f'Matplotlib failed (exit {code}). '
-                        f'Check GUI backend/Tk installation. '
+                        f'Check the Matplotlib GUI backend (MacOSX, TkAgg or QtAgg). '
+                        f'Terminal plots and PNG export remain available. '
                         f'Full traceback: {LOG_PATH}',
                         severity='error',
                         timeout=15,
@@ -1233,6 +1239,9 @@ class PsyView(App):
         await self.redraw()
 
     def on_unmount(self):
+        from subprocess import TimeoutExpired
+        from .plotting.matplotlib_plots import close_plot_process
+
         self.plot_generation += 1
 
         if self.analysis_task:
@@ -1242,6 +1251,12 @@ class PsyView(App):
             wait=False,
             cancel_futures=True,
         )
+        for process in self.figure_processes:
+            try:
+                close_plot_process(process)
+            except (OSError, TimeoutExpired):
+                logger.warning('Could not close plot process', exc_info=True)
+        self.figure_processes.clear()
 
     async def action_previous(self):
         if self.fit_edit_mode:
