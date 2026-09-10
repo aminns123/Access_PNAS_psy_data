@@ -20,9 +20,14 @@ async def test_log_toggle_refuses_nonpositive_empirical_uncertainty_in_sibling(e
     configured = policy('lateral_sensitivity', 'luminance_label_cd_m2')
     specs = row_specs([first, second], configured)
     notifications = []
-    app = SimpleNamespace(spec=specs[0], selection=SimpleNamespace(active=0),
-                          axis_scale_overrides={}, notify=notifications.append,
-                          redraw=AsyncMock())
+    app = SimpleNamespace(
+        spec=specs[0],
+        selection=SimpleNamespace(active=0),
+        axis_scale_overrides={},
+        axis_limit_overrides={},
+        notify=notifications.append,
+        redraw=AsyncMock(),
+    )
     before = deepcopy(app.spec)
     await PsyView._toggle_axis_scale(app, 'y')
     assert app.spec == before
@@ -37,11 +42,19 @@ async def test_valid_log_toggle_ignores_negative_fit_and_restores_default():
     raw = PlotSpec('', 'x', 'y', [Series([1, 2], [.2, .4], ''),
                                 Series([1, 2], [-100, 100], '', role='fit')])
     configured = policy('lateral_sensitivity', 'luminance_label_cd_m2')
-    app = SimpleNamespace(selection=SimpleNamespace(active=0), axis_scale_overrides={},
-                          notify=lambda message: None)
+    app = SimpleNamespace(
+        selection=SimpleNamespace(active=0),
+        axis_scale_overrides={},
+        axis_limit_overrides={},
+        notify=lambda message: None,
+    )
 
-    async def redraw():
-        app.spec = row_specs([raw], configured, app.axis_scale_overrides)[0]
+    async def redraw(force_background=False):
+        app.spec = row_specs(
+            [raw],
+            configured,
+            app.axis_scale_overrides,
+        )[0]
 
     app.redraw = redraw
     await redraw()
